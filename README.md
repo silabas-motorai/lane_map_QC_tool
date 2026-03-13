@@ -1,6 +1,6 @@
 # Lane Map QC Tool — QGIS Plugin
 
-QGIS plugin for lane map quality control. Combines lane visual lane map analysis with temporary layers, lane integrity checking, dashcam frame viewer, and street-level imagery (Google Street View / Mapillary).
+QGIS plugin for lane map quality control. Combines visual QC layers, lane integrity checking (snapping & routing), dashcam frame viewer, and street-level imagery (Google Street View / Mapillary).
 
 ---
 
@@ -23,9 +23,23 @@ The plugin toolbar should appear automatically. If not, go to:
 ## Usage
 
 ### Lane Map Quality Check
-Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map layer to run QC analysis. Results are added as layers under the *Lane Map Analysis* group.
+
+Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map layer to run QC analysis. Results are added as layers under the *Lane Map Analysis* group:
+
+| Layer | Type | Description |
+|---|---|---|
+| **Driving Direction** | Line | Arrow overlays showing driving direction of the selected lane centerline |
+| **One-way / Bidirectional Way** | Line | Lane centerlines colored by one-way vs bidirectional designation |
+| **Stop Zones** | Line | Boundaries flagged as stop zone segments and related closest centerline |
+| **Lane Morphology** | Line | Lane centerline geometry classified by lane morphology types |
+| **Speed Limit** | Line | Lane centerlines colored by assigned speed limit value |
+| **Passable/Non-Passable Regions** | Line | Lane borders marked as passable or non-passable |
+| **Regulatory Elements** | Point | All regulatory element icons |
+| **Related Regulatory Elements** | Point | Regulatory elements linked to a selected lane centerline |
+| **Integrity_Issues** | Point | Snapping gaps, and routing errors |
 
 ### Dashcam / Street View
+
 Click **🎥 Dashcam / Street View** to activate the map tool. Click anywhere on the map to:
 - Load the nearest dashcam frame in the **Dashcam Viewer** panel
 - Load the location in the **Street View** panel (Google Street View or Mapillary)
@@ -33,11 +47,13 @@ Click **🎥 Dashcam / Street View** to activate the map tool. Click anywhere on
 Click the marker in the Street View panel to open the location in your browser.
 
 ### Set Dashcam Paths
+
 Click **📂 Set Dashcam Paths** to configure:
 - **Overview HTML** — the `geolocated_videos.html` file inside your dashcam data folder
 - **Frames Root** — the same dashcam folder containing the frame subfolders
 
 Both paths should point to the same parent folder, for example:
+
 ```
 dashcam/
 ├── geolocated_videos.html   ← Overview HTML
