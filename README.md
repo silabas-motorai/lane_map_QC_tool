@@ -2,6 +2,7 @@
 
 QGIS plugin for lane map quality control. Combines visual QC layers, lane integrity checking (snapping & routing), dashcam frame viewer, and street-level imagery (Google Street View / Mapillary).
 
+
 ---
 
 ## Installation
@@ -28,7 +29,8 @@ Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map l
 
 | Layer | Type | Description |
 |---|---|---|
-| **Driving Direction** | Line | Arrow overlays showing driving direction of the selected lane centerline |
+| **Driving Direction** | Line | Blue arrow overlays showing driving direction of the selected lane centerline |
+| **Yield To** | Line | Red arrow overlays showing yielding centerlines of the selected lane centerline |
 | **One-way / Bidirectional Way** | Line | Lane centerlines colored by one-way vs bidirectional designation |
 | **Stop Zones** | Line | Boundaries flagged as stop zone segments and related closest centerline |
 | **Lane Morphology** | Line | Lane centerline geometry classified by lane morphology types |
