@@ -1,0 +1,11 @@
+[general]
+name=QC Suite
+qgisMinimumVersion=3.16
+description=Lane Map QC Tool + Dashcam Viewer + Street View — all in one panel
+version=1.0
+author=User
+email=user@example.com
+about=Combines lane integrity checking, visual analysis layers, dashcam frame viewer and embedded street-level imagery into a single QGIS toolbar.
+tracker=
+repository=
+hasProcessingProvider=no
