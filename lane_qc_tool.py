@@ -386,24 +386,68 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
     # ── 3. Stop/Wait line hanging ──
     if stop_wait_lines:
-        b_index, b_by_id = QgsSpatialIndex(), {}
-        for bf in (f for f in all_lines if str(f['lane_type']).lower() in ['road', 'cycle', 'road_cycle']):
-            b_index.insertFeature(bf); b_by_id[bf.id()] = bf
-        strict_r = 0.00001
+        lane_index, lane_by_id = QgsSpatialIndex(), {}
+        for bf in all_lines:
+            lane_index.insertFeature(bf)
+            lane_by_id[bf.id()] = bf
+
+        endpoint_r = 0.00005  # search radius to find nearby lanes
+
         for f in stop_wait_lines:
-            line = get_polyline(f)
-            if not line: continue
+            sl_geom = f.geometry()
+            if not sl_geom: continue
+            sl_line = get_polyline(f)
+            if not sl_line: continue
             wid, rid = fld(f, 'way_id'), fld(f, 'road_id')
-            for pt in (line[0], line[-1]):
+
+            bbox = sl_geom.boundingBox()
+            bbox.grow(endpoint_r * 3)
+            nearby_ids = lane_index.intersects(bbox)
+
+            # ── 1. Crossing check: every lane that crosses stop line
+            #       must have its start or end node exactly at the intersection ──
+            for lid in nearby_ids:
+                if lid not in lane_by_id: continue
+                lane_f    = lane_by_id[lid]
+                lane_geom = lane_f.geometry()
+                if not lane_geom: continue
+                if not sl_geom.crosses(lane_geom) and not sl_geom.intersects(lane_geom):
+                    continue
+                intersection = sl_geom.intersection(lane_geom)
+                if not intersection or intersection.isEmpty(): continue
+                wkb = intersection.wkbType()
+                if wkb in (1, 0x80000001):
+                    int_pts = [intersection.asPoint()]
+                elif wkb in (4, 0x80000004):
+                    int_pts = intersection.asMultiPoint()
+                else:
+                    continue
+                l_line = get_polyline(lane_f)
+                if not l_line: continue
+                endpoints = [l_line[0], l_line[-1]]
+                for int_pt in int_pts:
+                    int_geom = QgsGeometry.fromPointXY(int_pt)
+                    if not any(int_geom.distance(QgsGeometry.fromPointXY(ep)) == 0
+                               for ep in endpoints):
+                        issues.append({"way_id": fld(lane_f, 'way_id'),
+                                       "road_id": fld(lane_f, 'road_id'),
+                                       "point": int_pt, "type": "STOP_LINE_GAP"})
+
+            # ── 2. Endpoint hanging check: stop line endpoints must have
+            #       distance == 0 to a lane line ──
+            for pt in (sl_line[0], sl_line[-1]):
                 pt_geom = QgsGeometry.fromPointXY(pt)
-                r = QgsRectangle(pt.x()-strict_r, pt.y()-strict_r, pt.x()+strict_r, pt.y()+strict_r)
+                r = QgsRectangle(pt.x()-endpoint_r, pt.y()-endpoint_r,
+                                 pt.x()+endpoint_r, pt.y()+endpoint_r)
                 snapped = close_miss = False
-                for bid in b_index.intersects(r):
-                    d = pt_geom.distance(b_by_id[bid].geometry())
-                    if d < snap_tol:   snapped = True; break
-                    elif d < strict_r: close_miss = True
+                for bid in lane_index.intersects(r):
+                    if bid not in lane_by_id: continue
+                    d = pt_geom.distance(lane_by_id[bid].geometry())
+                    if d == 0:           snapped = True; break
+                    elif d < endpoint_r: close_miss = True
                 if not snapped and close_miss:
-                    issues.append({"way_id": wid, "road_id": rid, "point": pt, "type": "STOP_LINE_GAP"})
+                    issues.append({"way_id": wid, "road_id": rid,
+                                   "point": pt, "type": "STOP_LINE_GAP"})
 
     return issues
 
