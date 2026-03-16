@@ -31,11 +31,11 @@ Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map l
 | **Driving Direction** | Line | Blue arrow overlays showing driving direction of the selected lane centerline |
 | **Yield To** | Line | Red arrow overlays showing yielding centerlines of the selected lane centerline |
 | **One-way / Bidirectional Way** | Line | Lane centerlines colored by one-way vs bidirectional designation |
-| **Stop Zones** | Line | Boundaries flagged as stop zone segments and related closest centerline |
+| **Stop Zones** | Line | Boundaries flagged as stop zone areas and related closest centerline |
 | **Lane Morphology** | Line | Lane centerline geometry classified by lane morphology types |
 | **Speed Limit** | Line | Lane centerlines colored by assigned speed limit value |
-| **Passable/Non-Passable Regions** | Line | Lane borders marked as passable or non-passable |
-| **Regulatory Elements** | Point | All regulatory element icons |
+| **Passable/Non-Passable Regions** | Line | Lane borders marked as passable, non-passable and pyhsically non-passable |
+| **Regulatory Elements** | Point | Regulatory elements with icons |
 | **Related Regulatory Elements** | Point | Regulatory elements linked to a selected lane centerline |
 | **Integrity_Issues** | Point | Snapping gaps, and routing errors |
 
