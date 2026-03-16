@@ -6,7 +6,16 @@ QGIS plugin for lane map quality control. Combines visual QC layers, lane integr
 
 ## Installation
 
-### 1. Clone the repository into QGIS plugins folder
+### Option A — Install from ZIP 
+
+1. Download the plugin ZIP: [lane_map_QC_tool.zip]
+2. In QGIS: **Plugins → Manage and Install Plugins → Install from ZIP**
+3. Select the downloaded ZIP and click **Install Plugin**
+4. Restart QGIS
+
+### Option B — Clone from GitHub 
+
+1. Clone the repository into QGIS plugins folder
 
 ```bash
 # Linux / macOS
@@ -18,9 +27,8 @@ cd %APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\
 git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
 ```
 
-### 2. Restart QGIS
-
-The plugin toolbar should appear automatically. If not, go to:
+2. Restart QGIS
+3. The plugin toolbar should appear automatically. If not, go to:
 **Plugins → Manage and Install Plugins → Installed** and enable **Lane Map QC Tool**.
 
 ---
