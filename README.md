@@ -35,7 +35,7 @@ git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
 3. The plugin toolbar should appear automatically. If not, go to:
 **Plugins → Manage and Install Plugins → Installed** and enable **Lane Map QC Tool**.
 
-<img width="1070" height="787" alt="image" src="https://github.com/user-attachments/assets/d2bffe1a-39a3-407f-bf3f-f84fd0c8ad2a" />
+<img width="1036" height="529" alt="Screenshot from 2026-03-16 16-17-28" src="https://github.com/user-attachments/assets/b803c094-dbae-4c70-ba34-5d04be141eeb" />
 
 ---
 
