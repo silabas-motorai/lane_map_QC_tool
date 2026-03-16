@@ -9,7 +9,12 @@ QGIS plugin for lane map quality control. Combines visual QC layers, lane integr
 ### 1. Clone the repository into QGIS plugins folder
 
 ```bash
+# Linux / macOS
 cd ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
+git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
+
+# Windows
+cd %APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\
 git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
 ```
 
@@ -69,9 +74,24 @@ dashcam/
 
 When a new version is available, run this in the **QGIS Python Console**:
 
+## Updating the Plugin
+
+When a new version is available, run this in the **QGIS Python Console**:
+
+**Linux / macOS:**
 ```python
 import subprocess, os, qgis.utils
 path = os.path.expanduser("~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/lane_map_QC_tool")
+r = subprocess.run(["git", "pull"], cwd=path, capture_output=True, text=True)
+print(r.stdout or r.stderr)
+qgis.utils.reloadPlugin("lane_map_QC_tool")
+print("Plugin reloaded.")
+```
+
+**Windows:**
+```python
+import subprocess, os, qgis.utils
+path = os.path.join(os.environ["APPDATA"], "QGIS", "QGIS3", "profiles", "default", "python", "plugins", "lane_map_QC_tool")
 r = subprocess.run(["git", "pull"], cwd=path, capture_output=True, text=True)
 print(r.stdout or r.stderr)
 qgis.utils.reloadPlugin("lane_map_QC_tool")
