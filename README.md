@@ -88,10 +88,6 @@ dashcam/
 
 When a new version is available, run this in the **QGIS Python Console**:
 
-## Updating the Plugin
-
-When a new version is available, run this in the **QGIS Python Console**:
-
 **Linux / macOS:**
 ```python
 import subprocess, os, qgis.utils
@@ -111,7 +107,6 @@ print(r.stdout or r.stderr)
 qgis.utils.reloadPlugin("lane_map_QC_tool")
 print("Plugin reloaded.")
 ```
-
 ---
 
 ## Requirements
