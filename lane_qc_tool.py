@@ -508,7 +508,7 @@ def update_arrows(layer):
         lt = str(feat["lane_type"]).lower().strip() if "lane_type" in fields else ""
         at = str(feat["area_type"]).lower().strip() if "area_type" in fields else ""
 
-        if lt in ["regulatory_element", "pedestrian_marking"]
+        if lt in ["regulatory_element", "pedestrian_marking"]:
             continue
         if lt == "road" and at in ["mai_bus_stop", "parking", "exit"]:
             continue
