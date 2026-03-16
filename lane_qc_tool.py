@@ -504,6 +504,14 @@ def update_arrows(layer):
     arrow_layer = create_arrow_layer(ARROW_LAYER_NAME, "blue")
     arrow_layer.startEditing(); arrow_layer.dataProvider().truncate()
     for feat in layer.selectedFeatures():
+        fields = feat.fields().names()
+        lt = str(feat["lane_type"]).lower().strip() if "lane_type" in fields else ""
+        at = str(feat["area_type"]).lower().strip() if "area_type" in fields else ""
+
+        if lt == "regulatory_element":
+            continue
+        if lt == "road" and at in ["mai_bus_stop", "parking", "exit"]:
+            continue
         line = get_polyline(feat)
         if not line: continue
         try:    wid = int(str(feat["way_id"])[:3])
