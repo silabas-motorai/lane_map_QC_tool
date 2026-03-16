@@ -2,6 +2,8 @@
 
 QGIS plugin for lane map quality control. Combines visual QC layers, lane integrity checking (snapping & routing), dashcam frame viewer, and street-level imagery (Google Street View / Mapillary).
 
+<img width="1911" height="873" alt="Screenshot from 2026-03-16 16-08-22" src="https://github.com/user-attachments/assets/2649eb40-bb5e-469a-82b5-494009cefbf5" />
+
 ---
 
 ## Installation
