@@ -699,7 +699,8 @@ def add_traffic_elements(layer):
     ICON_SIZE = 10
     if not layer_has_fields(layer, ["line_type","line_sub"]): return
     reg_feats = [f for f in layer.getFeatures()
-                 if str(f["line_type"]).strip().lower() in ("traffic_sign","traffic_light")]
+                 if str(f["line_type"]).strip().lower() in ("traffic_sign","traffic_light")
+                 and str(f["line_sub"]).strip() not in ["de294", "de341"]]
     if not reg_feats: return
 
     lbl_layer = QgsVectorLayer(f"Point?crs={layer.crs().authid()}", REG_ALL_LAYER_NAME, "memory")
@@ -786,6 +787,7 @@ def show_selected_regulatory_elements(layer):
 
     reg_feats = [f for f in layer.getFeatures()
                  if f["line_type"] and str(f["line_type"]).strip().lower() in ["traffic_sign","traffic_light"]]
+
     V_OFF = 0.01 if "4326" not in layer.crs().authid() else 0.0000001
     type_idx = {t:i for i,t in enumerate(sorted({str(f["line_sub"]).strip() for f in reg_feats if f["line_sub"]}))}
 
