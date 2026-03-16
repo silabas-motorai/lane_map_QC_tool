@@ -21,7 +21,9 @@ QGIS plugin for lane map quality control. Combines visual QC layers, lane integr
 # Linux / macOS
 cd ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
 git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
+```
 
+```bash
 # Windows
 cd %APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\
 git clone https://github.com/silabas-motorai/lane_map_QC_tool.git
