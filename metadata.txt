@@ -1,7 +1,7 @@
 [general]
 name=Lane Map QC Tool
 qgisMinimumVersion=3.16
-description=Lane Map QC Tool + Dashcam Viewer + Street View — all in one panel
+description=QGIS Plugin designed for quality checking MotorAI HD lane maps
 version=1.0
 author=User
 email=user@example.com
