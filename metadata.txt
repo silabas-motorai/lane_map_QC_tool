@@ -1,5 +1,5 @@
 [general]
-name=QC Suite
+name=Lane Map QC Tool
 qgisMinimumVersion=3.16
 description=Lane Map QC Tool + Dashcam Viewer + Street View — all in one panel
 version=1.0
