@@ -1,8 +1,3 @@
-"""
-Dashcam Locator  v3
-=====================
-"""
-
 import os
 import re
 import math
@@ -43,7 +38,7 @@ KEY_RADIUS       = f"{SETTINGS_GROUP}/pick_radius_m"
 # =============================================================================
 DEFAULT_RADIUS_M = 15
 PLAY_INTERVAL_MS = 120
-HIGHLIGHT_GROUP  = "Dashcam Route Highlights"
+HIGHLIGHT_GROUP  = "Dashcam Data Routes"
 
 DEG_PER_METRE = 1.0 / 111_320.0
 
@@ -126,7 +121,6 @@ class SetupDialog(QDialog):
         lay = QVBoxLayout(self)
 
         banner = QLabel(
-            "<b>Dashcam Viewer – Path Setup</b><br>"
             "Configure the HTML overview file and frames folders below."
         )
         banner.setWordWrap(True)
@@ -277,8 +271,8 @@ class RoutePicker(QWidget):
         hdr = QHBoxLayout()
         lbl = QLabel(
             "<b>Routes passing through your click</b><br>"
-            "<i>Single-click</i> to preview on map · "
-            "<i>Double-click</i> to open frames"
+            "<i>Single-click</i> to preview selected route on map · "
+            "<i>Double-click</i> to open dashcam frames of the selected route"
         )
         lbl.setWordWrap(True)
         hdr.addWidget(lbl, 1)
@@ -296,7 +290,7 @@ class RoutePicker(QWidget):
 
         foot = QLabel(
             "Coloured arrow = START (driving direction)   "
-            "🔴 square = END of route"
+            "Coloured circle = END of route"
         )
         foot.setStyleSheet("color:#555;font-size:10px;")
         lay.addWidget(foot)
@@ -457,8 +451,8 @@ class RouteHighlightManager:
             arrow_sl.setShape(_SML.Shape.ArrowHead)
             arrow_sl.setColor(QColor("#ffffff"))
             arrow_sl.setStrokeColor(QColor("#ffffff"))
-            arrow_sl.setSize(5.0)
-            arrow_sl.setStrokeWidth(0.1)
+            arrow_sl.setSize(8.0)
+            arrow_sl.setStrokeWidth(1.2)
             arrow_sym.changeSymbolLayer(0, arrow_sl)
 
             mll = QgsMarkerLineSymbolLayer()
@@ -492,10 +486,10 @@ class RouteHighlightManager:
                     QgsSimpleMarkerSymbolLayer.Property.Angle,
                     QgsProperty.fromField("angle"))
             else:
-                sl.setShape(QgsSimpleMarkerSymbolLayer.Shape.Square)
-                sl.setColor(QColor("#ff2222"))
-                sl.setStrokeColor(QColor("#660000"))
-                sl.setStrokeWidth(0.3); sl.setSize(4.0)
+                sl.setShape(QgsSimpleMarkerSymbolLayer.Shape.Circle)
+                sl.setColor(QColor(c))
+                sl.setStrokeColor(QColor("#ffffff"))
+                sl.setStrokeWidth(0.6); sl.setSize(5.0)
             sym.changeSymbolLayer(0, sl)
             rule = QgsRuleBasedRenderer.Rule(sym)
             rule.setFilterExpression(f'"color" = \'{c}\' AND "end_type" = \'{et}\'')
@@ -516,12 +510,21 @@ class RouteHighlightManager:
         self.line_lyr.setLabelsEnabled(True)
 
     def _add_to_map(self):
-        for lyr in [self.marker_lyr, self.line_lyr]:
-            QgsProject.instance().addMapLayer(lyr, False)
-            root = QgsProject.instance().layerTreeRoot()
-            node = root.insertLayer(0, lyr)
-            if node:
-                node.setItemVisibilityChecked(True)
+        QgsProject.instance().addMapLayer(self.line_lyr, False)
+        QgsProject.instance().addMapLayer(self.marker_lyr, False)
+        
+        root = QgsProject.instance().layerTreeRoot()
+        grp = root.findGroup(HIGHLIGHT_GROUP)
+        if not grp:
+            grp = root.insertGroup(0, HIGHLIGHT_GROUP)
+            
+        node_marker = grp.insertLayer(0, self.marker_lyr)
+        node_line   = grp.insertLayer(1, self.line_lyr)
+        
+        if node_marker: node_marker.setItemVisibilityChecked(True)
+        if node_line:   node_line.setItemVisibilityChecked(True)
+        
+        grp.setItemVisibilityChecked(True)
 
 # =============================================================================
 # GEOMETRY HELPER
