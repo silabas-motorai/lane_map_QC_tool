@@ -41,14 +41,12 @@ KEY_RADIUS       = f"{SETTINGS_GROUP}/pick_radius_m"
 # =============================================================================
 # CONSTANTS
 # =============================================================================
-DEFAULT_RADIUS_M = 15       # metres – what the user sets in the spinner
+DEFAULT_RADIUS_M = 15
 PLAY_INTERVAL_MS = 120
 HIGHLIGHT_GROUP  = "Dashcam Route Highlights"
 
-# Degrees per metre at the equator (used when CRS unit = degrees)
 DEG_PER_METRE = 1.0 / 111_320.0
 
-# Palette – 20 visually distinct colours
 _PALETTE = [
     "#e6194b","#3cb44b","#4363d8","#f58231","#911eb4",
     "#42d4f4","#f032e6","#bfef45","#469990","#dcbeff",
@@ -79,23 +77,20 @@ TOOLTIP_RE    = re.compile(
 # =============================================================================
 
 def _crs_uses_degrees(crs):
-    """Return True if the CRS unit is degrees (geographic / lat-lon)."""
     try:
         unit = crs.mapUnits()
         return unit in (
             QgsUnitTypes.DistanceDegrees,
-            QgsUnitTypes.DistanceUnknownUnit,   # treat unknown as degrees (safe)
+            QgsUnitTypes.DistanceUnknownUnit,
         )
     except Exception:
-        # Fallback: check axis unit string
         return "degree" in crs.toProj().lower()
 
 
 def _metres_to_crs(metres, crs):
-    """Convert a distance in metres to CRS native units."""
     if _crs_uses_degrees(crs):
         return metres * DEG_PER_METRE
-    return metres   # already in metres for projected CRS
+    return metres
 
 
 # =============================================================================
@@ -200,7 +195,7 @@ class SetupDialog(QDialog):
                                  for i in range(self.list_w.count())]
 
 # =============================================================================
-# ZOOM LABEL  (zoom-to-cursor)
+# ZOOM LABEL
 # =============================================================================
 
 class ZoomLabel(QLabel):
@@ -232,26 +227,16 @@ class ZoomLabel(QLabel):
         new = min(10.0, old + 0.15) if d > 0 else max(1.0, old - 0.15)
         if abs(new - old) < 0.001:
             return
-
         sa = self._sa()
-        # Capture cursor in content-space BEFORE resize
         if sa:
             hb = sa.horizontalScrollBar()
             vb = sa.verticalScrollBar()
             cx = hb.value() + event.pos().x()
             cy = vb.value() + event.pos().y()
-
         self.zoom_factor = new
-
-        # Render immediately – no deferral – so the zoom is live
         dk = self._dock()
         if dk:
             dk.render_frame()
-        else:
-            # Fallback: render directly if dock ref unavailable
-            pass
-
-        # Re-anchor scroll so the pixel under cursor stays fixed
         if sa:
             sc = new / old
             hb.setValue(int(cx * sc) - event.pos().x())
@@ -330,7 +315,6 @@ class RoutePicker(QWidget):
             self.list_w.addItem(item)
 
     def mousePressEvent(self, event):
-        """Clicking outside the list deselects and restores all highlights."""
         item = self.list_w.itemAt(self.list_w.mapFrom(self, event.pos()))
         if item is None:
             self.list_w.clearSelection()
@@ -338,17 +322,14 @@ class RoutePicker(QWidget):
         super().mousePressEvent(event)
 
     def _single_click(self, item):
-        """Highlight ONLY this route on the map so the user can see its path."""
         c = item.data(Qt.UserRole)
         if not c or not self._crs: return
-        # Redraw highlights showing only the selected candidate
         if self.dock.highlight_mgr:
             self.dock.highlight_mgr.clear()
         self.dock.highlight_mgr = RouteHighlightManager(self._crs)
         self.dock.highlight_mgr.draw([c], self._route_coords)
 
     def _double_click(self, item):
-        """Open the frames for this route and clear map highlights."""
         c = item.data(Qt.UserRole)
         if not c: return
         fi = c.get("frame_index", 0)
@@ -358,7 +339,6 @@ class RoutePicker(QWidget):
         self.dock.show_frame_page()
 
     def _restore_all(self):
-        """Redraw all candidates after deselection."""
         if not self.candidates or not self._crs: return
         if self.dock.highlight_mgr:
             self.dock.highlight_mgr.clear()
@@ -462,12 +442,8 @@ class RouteHighlightManager:
             if c in seen: continue
             seen.add(c)
             sym = QgsLineSymbol()
-
-            # Base solid line
             sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "2.5"})
             sym.changeSymbolLayer(0, sl)
-
-            # Directional arrow markers repeated along the line
             arrow_sym = QgsMarkerSymbol()
             arrow_sl  = _SML()
             arrow_sl.setShape(_SML.Shape.ArrowHead)
@@ -476,14 +452,12 @@ class RouteHighlightManager:
             arrow_sl.setSize(3.5)
             arrow_sl.setStrokeWidth(0.3)
             arrow_sym.changeSymbolLayer(0, arrow_sl)
-
             mll = QgsMarkerLineSymbolLayer()
             mll.setSubSymbol(arrow_sym)
             mll.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
-            mll.setInterval(40.0)        # one arrow every 40 map-units (m or °)
-            mll.setOffsetAlongLine(10.0) # start offset so first arrow isn't at vertex
+            mll.setInterval(40.0)
+            mll.setOffsetAlongLine(10.0)
             sym.appendSymbolLayer(mll)
-
             rule = QgsRuleBasedRenderer.Rule(sym)
             rule.setFilterExpression(f'"color" = \'{c}\'')
             root_rule.appendChild(rule)
@@ -537,6 +511,14 @@ class RouteHighlightManager:
         for lyr in [self.marker_lyr, self.line_lyr]:
             QgsProject.instance().addMapLayer(lyr, False)
             grp.addLayer(lyr)
+            # Hide from layer panel
+            node = root.findLayer(lyr.id())
+            if node:
+                node.setItemVisibilityChecked(True)
+                node.setExpanded(False)
+        # Hide the group itself from layer panel tree
+        grp.setItemVisibilityChecked(True)
+        grp.setExpanded(False)
 
 # =============================================================================
 # GEOMETRY HELPER
@@ -555,10 +537,14 @@ def build_frames_index(frames_roots):
     for root_str in frames_roots:
         root = Path(root_str)
         if not root.exists(): continue
+        # Support direct folder or parent folder
+        name = root.name
+        mA = FOLDER_A.match(name); mB = FOLDER_B.match(name)
+        if mA:   idx.setdefault(mA.group(1), []).append(str(root))
+        elif mB: idx.setdefault(f"{mB.group(1)}_{mB.group(2)}", []).append(str(root))
         for p in root.rglob("*"):
             if not p.is_dir(): continue
-            mA = FOLDER_A.match(p.name)
-            mB = FOLDER_B.match(p.name)
+            mA = FOLDER_A.match(p.name); mB = FOLDER_B.match(p.name)
             if mA:   idx.setdefault(mA.group(1), []).append(str(p))
             elif mB: idx.setdefault(f"{mB.group(1)}_{mB.group(2)}", []).append(str(p))
     return idx
@@ -584,9 +570,8 @@ def build_click_index(obj_map, markers, polylines, crs):
     wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
     xf    = QgsCoordinateTransform(wgs84, crs, QgsProject.instance())
 
-    # ── Cell size in CRS native units ─────────────────────────────────────────
-    CELL_M    = 20.0           # target cell size in metres
-    cell_size = _metres_to_crs(CELL_M, crs)   # converts to degrees if needed
+    CELL_M    = 20.0
+    cell_size = _metres_to_crs(CELL_M, crs)
 
     grid          = defaultdict(list)
     route_coords  = {}
@@ -607,9 +592,7 @@ def build_click_index(obj_map, markers, polylines, crs):
             try:
                 p = xf.transform(QgsPointXY(*c))
                 proj_pts.append((p.x(), p.y()))
-                # Grid cell in CRS-native units
-                cell = (int(p.x() // cell_size),
-                        int(p.y() // cell_size))
+                cell = (int(p.x() // cell_size), int(p.y() // cell_size))
                 grid[cell].append({
                     "x": p.x(), "y": p.y(),
                     "run_id": rid, "key": k,
@@ -646,27 +629,16 @@ def _seq_to_frame_index(seq, n_gps, frame_numbers):
     n_frames = len(frame_numbers)
     if n_gps <= 1 or n_frames == 1:
         return 0
-
-    # Proportional position along the GPS track
-    t = seq / (n_gps - 1)
-
-    # Interpolate target frame number from the actual number range
-    first_num = frame_numbers[0]
-    last_num  = frame_numbers[-1]
-    target    = first_num + t * (last_num - first_num)
-
-    # Binary search for the closest frame number
-    lo, hi = 0, n_frames - 1
+    t          = seq / (n_gps - 1)
+    first_num  = frame_numbers[0]
+    last_num   = frame_numbers[-1]
+    target     = first_num + t * (last_num - first_num)
+    lo, hi     = 0, n_frames - 1
     while lo < hi:
         mid = (lo + hi) // 2
-        if frame_numbers[mid] < target:
-            lo = mid + 1
-        else:
-            hi = mid
-
-    # lo is now the index where target would be inserted.
-    # Check neighbour to find the truly closest frame number.
-    if lo > 0 and (target - frame_numbers[lo - 1]) < (frame_numbers[lo] - target):
+        if frame_numbers[mid] < target: lo = mid + 1
+        else: hi = mid
+    if lo > 0 and (target - frame_numbers[lo-1]) < (frame_numbers[lo] - target):
         return lo - 1
     return lo
 
@@ -686,22 +658,18 @@ class DashcamMapTool(QgsMapToolEmitPoint):
         self.route_run_ids = route_run_ids
         self.crs           = crs
         self.radius_m      = radius_m
-        self.cell_size     = cell_size   # CRS-native units (metres OR degrees)
+        self.cell_size     = cell_size
         self.setCursor(Qt.CrossCursor)
 
     def canvasReleaseEvent(self, e):
         pt = self.toMapCoordinates(e.pos())
         px, py = pt.x(), pt.y()
 
-        # Convert radius from metres to CRS native units for comparison
         radius_crs = _metres_to_crs(self.radius_m, self.crs)
+        cell_r     = int(math.ceil(radius_crs / self.cell_size)) + 1
+        cx0        = int(px // self.cell_size)
+        cy0        = int(py // self.cell_size)
 
-        # How many cells to search in each direction
-        cell_r = int(math.ceil(radius_crs / self.cell_size)) + 1
-        cx0    = int(px // self.cell_size)
-        cy0    = int(py // self.cell_size)
-
-        # ── Collect only points within radius (strict Euclidean check) ────────
         best_for_key = {}
         for dcx in range(-cell_r, cell_r + 1):
             for dcy in range(-cell_r, cell_r + 1):
@@ -709,8 +677,7 @@ class DashcamMapTool(QgsMapToolEmitPoint):
                 for p in self.grid.get(cell, []):
                     dist_crs = math.hypot(p["x"] - px, p["y"] - py)
                     if dist_crs > radius_crs:
-                        continue          # outside the radius — skip
-                    # Convert back to metres for display
+                        continue
                     dist_m = (dist_crs / DEG_PER_METRE
                                if _crs_uses_degrees(self.crs)
                                else dist_crs)
@@ -726,15 +693,12 @@ class DashcamMapTool(QgsMapToolEmitPoint):
             self.dock.found_lbl.setText("0 routes found")
             return
 
-        # ── Frames-first filter: skip routes with no local images ─────────────
         candidates = []
         for color_i, (key, p) in enumerate(best_for_key.items()):
             frames, frame_numbers = _load_frames_for_key(key, self.f_idx)
             if not frames:
-                continue   # route exists in HTML but no local frames → skip
+                continue
 
-            # Fine-scan EVERY GPS point on the full polyline to find the
-            # single closest point to the click — this gives the best seq index
             coords   = self.route_coords.get(key, [])
             n_gps    = len(coords)
             best_seq = p["seq"]
@@ -745,14 +709,12 @@ class DashcamMapTool(QgsMapToolEmitPoint):
                     best_d2 = d2
                     best_seq = si
 
-            # Precise GPS-seq → frame-list index mapping via actual frame numbers
-            # This corrects for different GPS and camera sampling rates
             fi = _seq_to_frame_index(best_seq, n_gps, frame_numbers)
 
             candidates.append({
                 "run_id":        p["run_id"],
                 "key":           key,
-                "frame_index":   fi,        # exact frame index – use this, not t
+                "frame_index":   fi,
                 "dist_m":        p["dist_m"],
                 "color_hex":     _route_color(color_i),
                 "frames":        frames,
@@ -817,16 +779,6 @@ class DashcamDock(QDockWidget):
         top.addWidget(self.btn_cfg)
         v.addLayout(top)
 
-        self.region_lbl = QLabel("")
-        self.region_lbl.setStyleSheet("color:#555;font-size:11px;")
-        self.region_lbl.setWordWrap(True)
-        v.addWidget(self.region_lbl)
-
-        # CRS info label
-        self.crs_lbl = QLabel("")
-        self.crs_lbl.setStyleSheet("color:#888;font-size:10px;")
-        v.addWidget(self.crs_lbl)
-
         # Radius row
         rad_row = QHBoxLayout()
         rad_row.addWidget(QLabel("Search radius:"))
@@ -861,13 +813,13 @@ class DashcamDock(QDockWidget):
         self.slider = QSlider(Qt.Horizontal)
         v.addWidget(self.slider)
 
-        # Speed row: Slow──slider──Fast  fps_label  [frame info]
+        # Speed row
         sp = QHBoxLayout()
         sp.addWidget(QLabel("Slow"))
         self.speed_sl = QSlider(Qt.Horizontal)
         self.speed_sl.setRange(20, 500)
         self.speed_sl.setValue(PLAY_INTERVAL_MS)
-        self.speed_sl.setInvertedAppearance(True)   # left=high interval=slow ✓
+        self.speed_sl.setInvertedAppearance(True)
         self.speed_sl.setFixedWidth(110)
         self.speed_sl.valueChanged.connect(self._upd_speed)
         sp.addWidget(self.speed_sl)
@@ -922,7 +874,6 @@ class DashcamDock(QDockWidget):
     def show_route_picker(self, candidates, route_coords, crs):
         self.highlight_mgr = RouteHighlightManager(crs)
         self.highlight_mgr.draw(candidates, route_coords)
-        # Pass route_coords + crs so RoutePicker can re-highlight on click
         self.route_picker.populate(candidates, route_coords=route_coords, crs=crs)
         self.stack.setCurrentIndex(1)
 
@@ -937,18 +888,6 @@ class DashcamDock(QDockWidget):
         if dlg.exec_() == QDialog.Accepted:
             _save_settings(dlg.get_html(), dlg.get_roots(), radius)
             self.controller.reload()
-
-    def set_region_status(self, avail, total, crs):
-        if total == 0:
-            self.region_lbl.setText("No routes found in HTML.")
-        else:
-            self.region_lbl.setText(
-                f"HTML routes: {total}  |  regions with local frames "
-                f"({len(avail)}): " + (", ".join(sorted(avail)) or "none"))
-        unit = "degrees" if _crs_uses_degrees(crs) else "metres"
-        self.crs_lbl.setText(
-            f"Project CRS: {crs.authid()} (units: {unit}) – "
-            f"radius spinner is always in metres")
 
     def _upd_speed(self, v):
         self.timer.setInterval(v); self.rtimer.setInterval(v)
@@ -987,17 +926,13 @@ class DashcamDock(QDockWidget):
         if not self.frame_files: return
         pix = QPixmap(self.frame_files[self.i])
         if not pix.isNull():
-            # Force Qt to process pending layout/resize events so the
-            # viewport reports its true current size (critical when floating)
             from qgis.PyQt.QtWidgets import QApplication
             QApplication.processEvents()
             vw = max(self.scroll.viewport().width(),  4)
             vh = max(self.scroll.viewport().height(), 4)
-            # Scale image to fill the viewport at zoom=1; zoom multiplies from that
             base = pix.scaled(vw, vh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             nw   = int(base.width()  * self.img.zoom_factor)
             nh   = int(base.height() * self.img.zoom_factor)
-            # Label must be at least viewport size so the scroll area works
             self.img.setFixedSize(max(nw, vw), max(nh, vh))
             self.img.setPixmap(
                 pix.scaled(nw, nh, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -1015,7 +950,6 @@ class DashcamDock(QDockWidget):
         self.slider.blockSignals(False)
 
     def resizeEvent(self, event):
-        """Re-render when the dock is resized so image fills the new space."""
         super().resizeEvent(event)
         self.render_frame()
 
@@ -1062,7 +996,6 @@ class DashcamController:
     def _ensure_dock(self):
         if not self.dock:
             self.dock = DashcamDock(controller=self, parent=self.iface.mainWindow())
-            self.iface.addDockWidget(Qt.BottomDockWidgetArea, self.dock)
 
     def _ensure_action(self):
         if not self.action:
@@ -1075,7 +1008,6 @@ class DashcamController:
                 "Only routes with local frames are shown.\n"
                 "Arrow = driving direction  ·  Red square = end of route")
             self.action.toggled.connect(self._toggled)
-            self.iface.addToolBarIcon(self.action)
 
     def _load_data(self, html, roots):
         try:
@@ -1086,11 +1018,6 @@ class DashcamController:
              self.route_run_ids,
              self.cell_size) = build_click_index(obj_map, mks, ply, self.project_crs)
             self.f_idx = build_frames_index(roots)
-            avail = set()
-            for r in roots:
-                root = Path(r)
-                if root.exists(): avail.add(root.parent.name or root.name)
-            self.dock.set_region_status(avail, total, self.project_crs)
         except Exception as exc:
             QMessageBox.critical(
                 None, "Dashcam Viewer – Load Error",
@@ -1110,26 +1037,22 @@ class DashcamController:
             if self.tool:
                 self.iface.mapCanvas().unsetMapTool(self.tool)
             self.tool = None
-            # Clear all highlights and hide the dock when tool is deactivated
             if self.dock:
                 if self.dock.highlight_mgr:
                     self.dock.highlight_mgr.clear()
                 self.dock.stop_all()
                 self.dock.hide()
 
-# =============================================================================
-# ENTRY POINT
-# =============================================================================
+    # ── Public methods called from lane_map_QC_tool.py ────────────────────────
+    def get_paths_silent(self):
+        html, roots, _ = _load_settings()
+        if html and os.path.isfile(html) and roots:
+            return html, roots
+        return None, None
 
-if "_DASHCAM_V" in globals():
-    try:
-        if _DASHCAM_V.action:
-            iface.removeToolBarIcon(_DASHCAM_V.action)
-            _DASHCAM_V.action.deleteLater()
-        if _DASHCAM_V.dock:
-            _DASHCAM_V.dock.close()
-    except Exception:
-        pass
-
-_DASHCAM_V = DashcamController(iface)
-_DASHCAM_V.start()
+    def reconfigure(self, parent=None):
+        html, roots, radius = _load_settings()
+        dlg = SetupDialog(html, roots, parent=parent)
+        if dlg.exec_() == QDialog.Accepted:
+            _save_settings(dlg.get_html(), dlg.get_roots(), radius)
+            self.reload()
