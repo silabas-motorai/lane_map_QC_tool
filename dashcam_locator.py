@@ -126,8 +126,8 @@ class SetupDialog(QDialog):
         lay = QVBoxLayout(self)
 
         banner = QLabel(
-            "<b>Welcome to Dashcam Viewer</b><br>"
-            "Configure paths below. Settings persist across sessions."
+            "<b>Dashcam Viewer – Path Setup</b><br>"
+            "Configure the HTML overview file and frames folders below."
         )
         banner.setWordWrap(True)
         banner.setStyleSheet(
@@ -442,22 +442,32 @@ class RouteHighlightManager:
             if c in seen: continue
             seen.add(c)
             sym = QgsLineSymbol()
-            sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "2.5"})
-            sym.changeSymbolLayer(0, sl)
+
+            # Thick white outline for contrast against any background
+            outline = QgsSimpleLineSymbolLayer.create({"color": "#ffffff", "width": "5.0"})
+            sym.changeSymbolLayer(0, outline)
+
+            # Colored line on top
+            sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "3.0"})
+            sym.appendSymbolLayer(sl)
+
+            # Arrow markers — larger and more frequent
             arrow_sym = QgsMarkerSymbol()
             arrow_sl  = _SML()
             arrow_sl.setShape(_SML.Shape.ArrowHead)
-            arrow_sl.setColor(QColor(c))
-            arrow_sl.setStrokeColor(QColor(c))
-            arrow_sl.setSize(3.5)
-            arrow_sl.setStrokeWidth(0.3)
+            arrow_sl.setColor(QColor("#ffffff"))
+            arrow_sl.setStrokeColor(QColor("#ffffff"))
+            arrow_sl.setSize(5.0)
+            arrow_sl.setStrokeWidth(0.1)
             arrow_sym.changeSymbolLayer(0, arrow_sl)
+
             mll = QgsMarkerLineSymbolLayer()
             mll.setSubSymbol(arrow_sym)
             mll.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
-            mll.setInterval(40.0)
-            mll.setOffsetAlongLine(10.0)
+            mll.setInterval(20.0)
+            mll.setOffsetAlongLine(5.0)
             sym.appendSymbolLayer(mll)
+
             rule = QgsRuleBasedRenderer.Rule(sym)
             rule.setFilterExpression(f'"color" = \'{c}\'')
             root_rule.appendChild(rule)
@@ -485,7 +495,7 @@ class RouteHighlightManager:
                 sl.setShape(QgsSimpleMarkerSymbolLayer.Shape.Square)
                 sl.setColor(QColor("#ff2222"))
                 sl.setStrokeColor(QColor("#660000"))
-                sl.setStrokeWidth(0.4); sl.setSize(8.0)
+                sl.setStrokeWidth(0.3); sl.setSize(4.0)
             sym.changeSymbolLayer(0, sl)
             rule = QgsRuleBasedRenderer.Rule(sym)
             rule.setFilterExpression(f'"color" = \'{c}\' AND "end_type" = \'{et}\'')
@@ -506,19 +516,12 @@ class RouteHighlightManager:
         self.line_lyr.setLabelsEnabled(True)
 
     def _add_to_map(self):
-        root = QgsProject.instance().layerTreeRoot()
-        grp  = root.findGroup(HIGHLIGHT_GROUP) or root.insertGroup(0, HIGHLIGHT_GROUP)
         for lyr in [self.marker_lyr, self.line_lyr]:
             QgsProject.instance().addMapLayer(lyr, False)
-            grp.addLayer(lyr)
-            # Hide from layer panel
-            node = root.findLayer(lyr.id())
+            root = QgsProject.instance().layerTreeRoot()
+            node = root.insertLayer(0, lyr)
             if node:
                 node.setItemVisibilityChecked(True)
-                node.setExpanded(False)
-        # Hide the group itself from layer panel tree
-        grp.setItemVisibilityChecked(True)
-        grp.setExpanded(False)
 
 # =============================================================================
 # GEOMETRY HELPER
@@ -765,7 +768,7 @@ class DashcamDock(QDockWidget):
         # Top bar
         top = QHBoxLayout()
         from qgis.PyQt.QtWidgets import QLineEdit as _QLE
-        self.title = _QLE("Ready – activate the camera tool, then click on a GPS route.")
+        self.title = _QLE("")
         self.title.setReadOnly(True)
         self.title.setFrame(False)
         self.title.setStyleSheet(
