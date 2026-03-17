@@ -393,77 +393,78 @@ class RouteHighlightManager:
         self.line_lyr = None
 
     def _style_lines(self):
-        from qgis.core import QgsSimpleMarkerSymbolLayer as _SML
-        root_rule = QgsRuleBasedRenderer.Rule(None)
-        seen = set()
-        
-        for feat in self.line_lyr.getFeatures():
-            c = feat["color"]
-            if c in seen: continue
-            seen.add(c)
+            from qgis.core import (QgsMarkerLineSymbolLayer,
+                                    QgsSimpleMarkerSymbolLayer as _SML)
+            root_rule = QgsRuleBasedRenderer.Rule(None)
+            seen = set()
             
-            sym = QgsLineSymbol()
+            for feat in self.line_lyr.getFeatures():
+                c = feat["color"]
+                if c in seen: continue
+                seen.add(c)
+                
+                sym = QgsLineSymbol()
 
-            # 1. Kalın beyaz zemin
-            outline = QgsSimpleLineSymbolLayer.create({"color": "#ffffff", "width": "5.0"})
-            sym.changeSymbolLayer(0, outline)
+                # 1. Kalın beyaz zemin (Kontrast için)
+                outline = QgsSimpleLineSymbolLayer.create({"color": "#ffffff", "width": "5.0"})
+                sym.changeSymbolLayer(0, outline)
 
-            # 2. Renkli ana çizgi
-            sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "3.0"})
-            sym.appendSymbolLayer(sl)
+                # 2. Renkli ana çizgi
+                sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "3.0"})
+                sym.appendSymbolLayer(sl)
 
-            # 3. Yön okları (Çizgi boyunca tekrar eden - Boyutları küçültüldü)
-            dir_sym = QgsMarkerSymbol()
-            dir_sl  = _SML()
-            dir_sl.setShape(_SML.Shape.ArrowHead)
-            dir_sl.setColor(QColor("#ffffff"))
-            dir_sl.setStrokeColor(QColor("#ffffff"))
-            dir_sl.setSize(5.0)        # Oklar küçüldü
-            dir_sl.setStrokeWidth(0.5) # Oklar inceldi
-            dir_sym.changeSymbolLayer(0, dir_sl)
+                # 3. Yön okları (Çizgi boyunca aralıklarla tekrar eden beyaz oklar)
+                dir_sym = QgsMarkerSymbol()
+                dir_sl  = _SML()
+                dir_sl.setShape(_SML.Shape.ArrowHead)      # Yatay ok
+                dir_sl.setColor(QColor("#ffffff"))
+                dir_sl.setStrokeColor(QColor("#ffffff"))
+                dir_sl.setSize(5.0)
+                dir_sl.setStrokeWidth(0.5)
+                dir_sym.changeSymbolLayer(0, dir_sl)
 
-            mll_dir = QgsMarkerLineSymbolLayer()
-            mll_dir.setSubSymbol(dir_sym)
-            mll_dir.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
-            mll_dir.setInterval(20.0)
-            mll_dir.setOffsetAlongLine(5.0)
-            sym.appendSymbolLayer(mll_dir)
+                mll_dir = QgsMarkerLineSymbolLayer()
+                mll_dir.setSubSymbol(dir_sym)
+                mll_dir.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
+                mll_dir.setInterval(20.0)
+                mll_dir.setOffsetAlongLine(5.0)
+                sym.appendSymbolLayer(mll_dir)
 
-            # 4. Başlangıç Oku (Çizginin sadece İLK noktasına gömülü)
-            start_sym = QgsMarkerSymbol()
-            start_sl  = _SML()
-            start_sl.setShape(_SML.Shape.Arrow)
-            start_sl.setColor(QColor(c))
-            start_sl.setStrokeColor(QColor("#000000"))
-            start_sl.setStrokeWidth(0.4)
-            start_sl.setSize(9.0)
-            start_sym.changeSymbolLayer(0, start_sl)
+                # 4. Başlangıç Oku (ArrowHead kullanarak YATAY olmasını ve çizgiyle hizalanmasını sağladık)
+                start_sym = QgsMarkerSymbol()
+                start_sl  = _SML()
+                start_sl.setShape(_SML.Shape.ArrowHead)    # Arrow yerine ArrowHead kullanıldı
+                start_sl.setColor(QColor(c))
+                start_sl.setStrokeColor(QColor("#ffffff")) # Çizgiden ayrışması için beyaz ince çerçeve
+                start_sl.setStrokeWidth(0.8)
+                start_sl.setSize(7.0)
+                start_sym.changeSymbolLayer(0, start_sl)
 
-            mll_start = QgsMarkerLineSymbolLayer()
-            mll_start.setSubSymbol(start_sym)
-            mll_start.setPlacement(QgsMarkerLineSymbolLayer.Placement.FirstVertex)
-            sym.appendSymbolLayer(mll_start)
+                mll_start = QgsMarkerLineSymbolLayer()
+                mll_start.setSubSymbol(start_sym)
+                mll_start.setPlacement(QgsMarkerLineSymbolLayer.Placement.FirstVertex)
+                sym.appendSymbolLayer(mll_start)
 
-            # 5. Bitiş Yuvarlağı (Çizginin sadece SON noktasına gömülü)
-            end_sym = QgsMarkerSymbol()
-            end_sl  = _SML()
-            end_sl.setShape(_SML.Shape.Circle) # Bitiş yuvarlak
-            end_sl.setColor(QColor(c))         # Bitiş kendi renginde
-            end_sl.setStrokeColor(QColor("#ffffff"))
-            end_sl.setStrokeWidth(0.6)
-            end_sl.setSize(5.0)
-            end_sym.changeSymbolLayer(0, end_sl)
+                # 5. Bitiş Yuvarlağı
+                end_sym = QgsMarkerSymbol()
+                end_sl  = _SML()
+                end_sl.setShape(_SML.Shape.Circle)
+                end_sl.setColor(QColor(c))
+                end_sl.setStrokeColor(QColor("#ffffff"))
+                end_sl.setStrokeWidth(0.6)
+                end_sl.setSize(3.5)                        # Lejantta sırıtmaması için biraz daha küçültüldü
+                end_sym.changeSymbolLayer(0, end_sl)
 
-            mll_end = QgsMarkerLineSymbolLayer()
-            mll_end.setSubSymbol(end_sym)
-            mll_end.setPlacement(QgsMarkerLineSymbolLayer.Placement.LastVertex)
-            sym.appendSymbolLayer(mll_end)
+                mll_end = QgsMarkerLineSymbolLayer()
+                mll_end.setSubSymbol(end_sym)
+                mll_end.setPlacement(QgsMarkerLineSymbolLayer.Placement.LastVertex)
+                sym.appendSymbolLayer(mll_end)
 
-            rule = QgsRuleBasedRenderer.Rule(sym)
-            rule.setFilterExpression(f'"color" = \'{c}\'')
-            root_rule.appendChild(rule)
-            
-        self.line_lyr.setRenderer(QgsRuleBasedRenderer(root_rule))
+                rule = QgsRuleBasedRenderer.Rule(sym)
+                rule.setFilterExpression(f'"color" = \'{c}\'')
+                root_rule.appendChild(rule)
+                
+            self.line_lyr.setRenderer(QgsRuleBasedRenderer(root_rule))
 
     def _add_labels(self):
         pal = QgsPalLayerSettings()
