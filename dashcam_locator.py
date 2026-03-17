@@ -290,7 +290,7 @@ class RoutePicker(QWidget):
         lay.addWidget(self.list_w)
 
         foot = QLabel(
-            "White arrow = START of the    ·   "
+            "White arrow = START of the route  ·   "
             "Coloured circle = END of the route"
         )
         foot.setStyleSheet("color:#555;font-size:10px;")
