@@ -14,7 +14,7 @@ from qgis.core import (
     QgsSimpleLineSymbolLayer, QgsSpatialIndex, QgsRectangle, QgsSingleSymbolRenderer
 )
 from qgis.utils import iface
-from collections import defaultdict
+from collections import defaultdict, Counter
 import os, sys, random, inspect
 
 # =============================================================================
@@ -153,7 +153,7 @@ def remove_layer_by_name(name):
             break
 
 # =============================================================================
-#  INTEGRITY CHECK  (snapping · routing · stop lines)
+#  INTEGRITY CHECK  (snapping · routing · stop lines · duplicates)
 # =============================================================================
 
 def get_border_way_ids_for_centerline(roads_with_ref, cl_way_id):
@@ -174,11 +174,21 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
     if not features:
         return []
 
-    all_lines, stop_wait_lines = [], []
+    all_lines, stop_wait_lines, bus_stops = [], [], []
+    road_id_groups = defaultdict(list)
+
     for f in features:
         l_type = str(fld(f, 'lane_type')).lower()
         a_type = str(fld(f, 'area_type')).lower()
         l_sub  = str(fld(f, 'line_sub')).lower()
+        rid    = str(fld(f, 'road_id')).strip()
+
+        if rid:
+            road_id_groups[rid].append(f)
+
+        if a_type == 'mai_bus_stop':
+            bus_stops.append(f)
+
         if l_sub in ['de294', 'de341']:
             stop_wait_lines.append(f)
         elif l_type == 'centerline' or (l_type in ['road', 'cycle', 'road_cycle'] and a_type in ['', 'none', 'null']):
@@ -402,11 +412,9 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
             bbox = sl_geom.boundingBox()
             bbox.grow(endpoint_r * 3)
-            nearby_ids = lane_index.intersects(bbox)
+            nearby_ids_list = lane_index.intersects(bbox)
 
-            # ── 1. Crossing check: every lane that crosses stop line
-            #       must have its start or end node exactly at the intersection ──
-            for lid in nearby_ids:
+            for lid in nearby_ids_list:
                 if lid not in lane_by_id: continue
                 lane_f    = lane_by_id[lid]
                 lane_geom = lane_f.geometry()
@@ -433,8 +441,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                                        "road_id": fld(lane_f, 'road_id'),
                                        "point": int_pt, "type": "STOP_LINE_GAP"})
 
-            # ── 2. Endpoint hanging check: stop line endpoints must have
-            #       distance == 0 to a lane line ──
             for pt in (sl_line[0], sl_line[-1]):
                 pt_geom = QgsGeometry.fromPointXY(pt)
                 r = QgsRectangle(pt.x()-endpoint_r, pt.y()-endpoint_r,
@@ -448,6 +454,66 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                 if not snapped and close_miss:
                     issues.append({"way_id": wid, "road_id": rid,
                                    "point": pt, "type": "STOP_LINE_GAP"})
+
+
+    # ── 4. Stop Zone Node Count Check ──
+    for f in bus_stops:
+        poly = get_polyline(f)
+        if poly and len(poly) != 4:
+            issues.append({
+                "way_id": fld(f, 'way_id'),
+                "road_id": fld(f, 'road_id'),
+                "point": poly[0],
+                "type": f"INVALID_STOP_ZONE_NODES (Expected 4, got {len(poly)})"
+            })
+
+    # ── 5. Unique road_id/way_id pair & Scenario Limit Check ──
+    for rid, feats in road_id_groups.items():
+        way_ids = [str(fld(f, 'way_id')).strip() for f in feats if str(fld(f, 'way_id')).strip()]
+        counts = Counter(way_ids)
+
+        # A. Check for duplicate (road_id, way_id) pairs
+        for wid, count in counts.items():
+            if count > 1:
+                err_feat = next(f for f in feats if str(fld(f, 'way_id')).strip() == wid)
+                poly = get_polyline(err_feat)
+                pt = poly[0] if poly else QgsPointXY(0,0)
+                issues.append({
+                    "way_id": wid,
+                    "road_id": rid,
+                    "point": pt,
+                    "type": "DUPLICATE_ROAD_WAY_ID"
+                })
+
+        # B. Check for scenario limit (using too many lane features for this road_id)
+        lane_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() in ['centerline', 'road', 'cycle', 'road_cycle']]
+        rwr = sum(1 for f in lane_feats if str(fld(f, 'lane_type')).lower() in ['road', 'cycle', 'road_cycle'])
+        centerlines = [f for f in lane_feats if str(fld(f, 'lane_type')).lower() == 'centerline']
+
+        if centerlines:
+            for cl in centerlines:
+                cl_wid = str(fld(cl, 'way_id')).strip()
+                try: cl_wid_int = int(cl_wid)
+                except: continue
+
+                pair_key = (rwr, cl_wid_int)
+                if pair_key in WAY_PAIRS_MAP:
+                    border_pairs, _ = WAY_PAIRS_MAP[pair_key]
+                    expected_borders = set()
+                    for pair in border_pairs:
+                        expected_borders.update(pair)
+                    # Total valid features allowed for this scenario = 1 centerline + unique borders
+                    expected_count = 1 + len(expected_borders)
+
+                    if len(lane_feats) > expected_count:
+                        poly = get_polyline(cl)
+                        pt = poly[0] if poly else QgsPointXY(0,0)
+                        issues.append({
+                            "way_id": cl_wid,
+                            "road_id": rid,
+                            "point": pt,
+                            "type": f"TOO_MANY_FEATURES_FOR_SCENARIO (Expected {expected_count}, found {len(lane_feats)})"
+                        })
 
     return issues
 
@@ -475,7 +541,7 @@ def render_integrity_issues(issues, source_layer):
                                            'outline_color': 'blue', 'outline_width': '0.6', 'size': '4.5'})
     temp.setRenderer(QgsSingleSymbolRenderer(symbol))
     add_layer_to_group(temp, visible=False)
-    log(f"{temp.featureCount()} Lane Topology Issues Found.", Qgis.Warning)
+    log(f"{temp.featureCount()} Topology / Integrity Issues Found.", Qgis.Warning)
 
 # =============================================================================
 #  VISUAL LAYERS
@@ -589,7 +655,8 @@ def create_stop_zone(input_layer):
     for feat in input_layer.getFeatures():
         if str(feat["area_type"]) != "MAI_bus_stop": continue
         geom = feat.geometry()
-        if geom.isEmpty() or len(geom.asPolyline()) != 5: continue
+        # Görseli çizerken de artık 5 yerine 4 node (point) arıyor.
+        if geom.isEmpty() or len(geom.asPolyline()) != 4: continue
         nf = QgsFeature(out.fields()); nf.setGeometry(geom)
         nf["orig_fid"] = feat.id(); nf["feature_type"] = "zone"
         nf["name"] = feat["name"] or ""; feats.append(nf)
