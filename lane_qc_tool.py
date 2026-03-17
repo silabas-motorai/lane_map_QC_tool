@@ -459,23 +459,26 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
     # ── 4. Stop Zone Node Count Check ──
     for f in bus_stops:
         poly = get_polyline(f)
-        if poly and len(poly) != 4:
-            issues.append({
-                "way_id": fld(f, 'way_id'),
-                "road_id": fld(f, 'road_id'),
-                "point": poly[0],
-                "type": f"INVALID_STOP_ZONE_NODES (Expected 4, got {len(poly)})"
-            })
+        if poly:
+            # Doğru bir kapalı dörtgen LineString olarak 5 node içerir ve ilk/son node aynıdır.
+            if len(poly) != 5 or poly[0] != poly[-1]:
+                issues.append({
+                    "way_id": fld(f, 'way_id'),
+                    "road_id": fld(f, 'road_id'),
+                    "point": poly[0],
+                    "type": f"INVALID_STOP_ZONE_GEOMETRY (Expected closed 4-sided polygon, got {len(poly)} nodes)"
+                })
 
     # ── 5. Unique road_id/way_id pair & Scenario Limit Check ──
     for rid, feats in road_id_groups.items():
-        way_ids = [str(fld(f, 'way_id')).strip() for f in feats if str(fld(f, 'way_id')).strip()]
+        # A. Check for duplicate (road_id, way_id) pairs
+        uniq_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() != 'pedestrian_marking']
+        way_ids = [str(fld(f, 'way_id')).strip() for f in uniq_feats if str(fld(f, 'way_id')).strip()]
         counts = Counter(way_ids)
 
-        # A. Check for duplicate (road_id, way_id) pairs
         for wid, count in counts.items():
             if count > 1:
-                err_feat = next(f for f in feats if str(fld(f, 'way_id')).strip() == wid)
+                err_feat = next(f for f in uniq_feats if str(fld(f, 'way_id')).strip() == wid)
                 poly = get_polyline(err_feat)
                 pt = poly[0] if poly else QgsPointXY(0,0)
                 issues.append({
@@ -655,8 +658,9 @@ def create_stop_zone(input_layer):
     for feat in input_layer.getFeatures():
         if str(feat["area_type"]) != "MAI_bus_stop": continue
         geom = feat.geometry()
-        # Görseli çizerken de artık 5 yerine 4 node (point) arıyor.
-        if geom.isEmpty() or len(geom.asPolyline()) != 4: continue
+        poly = geom.asPolyline() if not geom.isEmpty() else []
+        # Görseli çizerken 5 node (kapalı dörtgen) ve ilk/son node aynılığını kontrol ediyoruz
+        if not poly or len(poly) != 5 or poly[0] != poly[-1]: continue
         nf = QgsFeature(out.fields()); nf.setGeometry(geom)
         nf["orig_fid"] = feat.id(); nf["feature_type"] = "zone"
         nf["name"] = feat["name"] or ""; feats.append(nf)
@@ -895,65 +899,4 @@ def show_selected_regulatory_elements(layer):
             sl = QgsSimpleMarkerSymbolLayer(); sl.setColor(QColor("blue")); sl.setSize(ICON_SIZE/2)
             symbol.changeSymbolLayer(0, sl)
         rule = QgsRuleBasedRenderer.Rule(symbol)
-        rule.setFilterExpression(f'"icon_code"=\'{icon_code}\' AND "has_icon"={"true" if has_icon else "false"}')
-        rule.setLabel(icon_code if has_icon else f"[NO ICON] {icon_code}")
-        root_rule.appendChild(rule)
-    mem_layer.setRenderer(QgsRuleBasedRenderer(root_rule)); mem_layer.triggerRepaint()
-
-# =============================================================================
-#  SELECTION HANDLER
-# =============================================================================
-
-def on_selection_changed():
-    layer = iface.activeLayer()
-    if not layer or not isinstance(layer, QgsVectorLayer): return
-    update_arrows(layer)
-    update_yield_to_highlights(layer)
-    show_selected_regulatory_elements(layer)
-
-# =============================================================================
-#  PUBLIC ENTRY POINT  (called by QcSuitePlugin or run standalone)
-# =============================================================================
-
-def run_qc(layer=None):
-    """Run the full QC pipeline on *layer* (defaults to active layer)."""
-    if layer is None:
-        layer = iface.activeLayer()
-    if not layer or not isinstance(layer, QgsVectorLayer):
-        log("No active vector layer found.", Qgis.Critical)
-        return
-
-    # Verify style_images folder exists and warn if not
-    if not os.path.isdir(icon_folder):
-        log(f"style_images not found at: {icon_folder} — traffic sign icons will be missing.", Qgis.Warning)
-
-    # Clean previous outputs
-    for name in ["Lane Morphology", "Speed Limit", "Passable/Non-Passable Regions",
-                 "One-way / Bidirectional Way", "Stop Zones",
-                 ARROW_LAYER_NAME, YIELD_TO_LAYER_NAME,
-                 REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME, INTEGRITY_LAYER_NAME]:
-        remove_layer_by_name(name)
-
-    # ── Integrity check ──
-    render_integrity_issues(check_lane_integrity(), layer)
-
-    # ── Visual analysis layers ──
-    create_oneway_layer(layer)
-    create_stop_zone(layer)
-    create_lane_morphology_layer(layer)
-    create_speed_limit_layer(layer)
-    create_passable_layer(layer)
-    add_traffic_elements(layer)
-
-    # ── Selection-driven overlays ──
-    iface.setActiveLayer(layer)
-    try:   layer.selectionChanged.disconnect()
-    except Exception: pass
-    layer.selectionChanged.connect(on_selection_changed)
-
-    log("QC Tool ready. Select a centerline to inspect driving direction, yield_to and related traffic rules.", Qgis.Success)
-
-
-# Allow running directly as a standalone script from QGIS console
-if __name__ == "__console__":
-    run_qc()
+        rule.setFilterExpression(f'"icon_code"=\'{icon_code}\' AND
