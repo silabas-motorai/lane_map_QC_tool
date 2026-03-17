@@ -271,7 +271,7 @@ class RoutePicker(QWidget):
 
         hdr = QHBoxLayout()
         lbl = QLabel(
-            "<b>Dahcam data routes near the clicked point</b><br>"
+            "<b>Dashcam data routes near the clicked point</b><br>"
             "<i>Single-click</i> to preview the selected route on the map<br>"
             "<i>Double-click</i> to view the selected route's frames"
         )
@@ -350,7 +350,7 @@ class RoutePicker(QWidget):
 # =============================================================================
 
 class RouteHighlightManager:
-    LAYER_NAME = "Dashcam Data Routes"
+    LAYER_NAME = "Dashcam Routes"
 
     def __init__(self, crs):
         self.crs      = crs
@@ -803,7 +803,7 @@ class DashcamDock(QDockWidget):
         self.btn_nx  = QPushButton("Next ▶")
         self.btn_pl  = QPushButton("▶▶ Play")
         self.btn_st  = QPushButton("■ Stop")
-        self.btn_clr = QPushButton("✕ Dahcam Routes")
+        self.btn_clr = QPushButton("✕ Dashcam Routes")
         self.btn_clr.setStyleSheet("color:#c00;")
         self.btn_clr.setToolTip("Remove dashcam route layers from the map")
         for b in [self.btn_rw, self.btn_pv, self.btn_nx,
