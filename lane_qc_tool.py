@@ -97,7 +97,6 @@ def layer_has_fields(layer, field_names):
     return all(n in names for n in field_names)
 
 def fld(feat, name, default=""):
-    """Safe field accessor for QgsFeature — returns default if field missing or NULL."""
     try:
         val = feat[name]
         return val if val is not None else default
@@ -105,13 +104,11 @@ def fld(feat, name, default=""):
         return default
 
 def needs_reversal(way_id, line):
-    """Returns True if the line vertices run opposite to the logical flow direction."""
     in_reverse = way_id in REVERSE_WAY_IDS
     return (in_reverse and line[0].x() > line[-1].x()) or \
            (not in_reverse and line[0].x() < line[-1].x())
 
 def get_polyline(feat):
-    """Returns the first polyline of a feature, or None."""
     geom = feat.geometry()
     if not geom:
         return None
@@ -121,7 +118,6 @@ def get_polyline(feat):
         return None
 
 def add_layer_to_group(layer, visible=False):
-    """Adds layer inside the analysis group, restores active layer."""
     active = iface.activeLayer()
     root  = QgsProject.instance().layerTreeRoot()
     group = root.findGroup(GROUP_NAME) or root.insertGroup(0, GROUP_NAME)
@@ -133,7 +129,6 @@ def add_layer_to_group(layer, visible=False):
         iface.setActiveLayer(active)
 
 def add_layer_outside_group(layer, visible=True, insert_position=0):
-    """Adds layer above the analysis group at the given relative position."""
     active = iface.activeLayer()
     root   = QgsProject.instance().layerTreeRoot()
     group  = root.findGroup(GROUP_NAME)
@@ -153,7 +148,7 @@ def remove_layer_by_name(name):
             break
 
 # =============================================================================
-#  INTEGRITY CHECK  (snapping · routing · stop lines · duplicates)
+#  INTEGRITY CHECK
 # =============================================================================
 
 def get_border_way_ids_for_centerline(roads_with_ref, cl_way_id):
@@ -230,7 +225,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                 return True
         return False
 
-    # ── Build connection graph ──
     successors, predecessors = defaultdict(set), defaultdict(set)
     raw_succ = defaultdict(lambda: defaultdict(list))
     raw_pred = defaultdict(lambda: defaultdict(list))
@@ -272,7 +266,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
     issues = []
 
-    # ── 1. Snapping ──
     for f in all_lines:
         f_entry, f_exit, f_east = flow_cache[f.id()]
         if not f_entry: continue
@@ -296,7 +289,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
             if snapped: continue
             if is_cycle and cycle_endpoint_on_road(endpoint, f.id()): continue
 
-            # Check proximity gap
             is_prox = False
             for oid in nearby_ids(endpoint, 0.0001):
                 if oid == f.id() or oid not in feat_by_id: continue
@@ -308,7 +300,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                 issues.append({"way_id": wid, "road_id": rid, "point": endpoint, "type": f"{l_label}_GAP"})
                 continue
 
-            # Check graph-based gap
             connected_rids = predecessors[key] if is_entry else successors[key]
             if not connected_rids: continue
             for oid in nearby_ids(endpoint, graph_tol * 200):
@@ -321,7 +312,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     issues.append({"way_id": wid, "road_id": rid, "point": endpoint, "type": f"{l_label}_GAP"})
                     break
 
-    # ── 2. Border routing consistency ──
     roads_with_ref_map  = defaultdict(int)
     borders_by_rid_wid  = defaultdict(list)
     for f in all_lines:
@@ -394,14 +384,13 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                         "type": f"BORDER_MISMATCH → road_id {sorted(str(r) for r in found_rids)} (expected: {sorted(str(r) for r in expected)})"
                     })
 
-    # ── 3. Stop/Wait line hanging ──
     if stop_wait_lines:
         lane_index, lane_by_id = QgsSpatialIndex(), {}
         for bf in all_lines:
             lane_index.insertFeature(bf)
             lane_by_id[bf.id()] = bf
 
-        endpoint_r = 0.00005  # search radius to find nearby lanes
+        endpoint_r = 0.00005
 
         for f in stop_wait_lines:
             sl_geom = f.geometry()
@@ -456,11 +445,9 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                                    "point": pt, "type": "STOP_LINE_GAP"})
 
 
-    # ── 4. Stop Zone Node Count Check ──
     for f in bus_stops:
         poly = get_polyline(f)
         if poly:
-            # Doğru bir kapalı dörtgen LineString olarak 5 node içerir ve ilk/son node aynıdır.
             if len(poly) != 5 or poly[0] != poly[-1]:
                 issues.append({
                     "way_id": fld(f, 'way_id'),
@@ -469,9 +456,7 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     "type": f"INVALID_STOP_ZONE_GEOMETRY (Expected closed 4-sided polygon, got {len(poly)} nodes)"
                 })
 
-    # ── 5. Unique road_id/way_id pair & Scenario Limit Check ──
     for rid, feats in road_id_groups.items():
-        # A. Check for duplicate (road_id, way_id) pairs
         uniq_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() != 'pedestrian_marking']
         way_ids = [str(fld(f, 'way_id')).strip() for f in uniq_feats if str(fld(f, 'way_id')).strip()]
         counts = Counter(way_ids)
@@ -488,7 +473,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     "type": "DUPLICATE_ROAD_WAY_ID"
                 })
 
-        # B. Check for scenario limit (using too many lane features for this road_id)
         lane_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() in ['centerline', 'road', 'cycle', 'road_cycle']]
         rwr = sum(1 for f in lane_feats if str(fld(f, 'lane_type')).lower() in ['road', 'cycle', 'road_cycle'])
         centerlines = [f for f in lane_feats if str(fld(f, 'lane_type')).lower() == 'centerline']
@@ -505,7 +489,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     expected_borders = set()
                     for pair in border_pairs:
                         expected_borders.update(pair)
-                    # Total valid features allowed for this scenario = 1 centerline + unique borders
                     expected_count = 1 + len(expected_borders)
 
                     if len(lane_feats) > expected_count:
@@ -659,7 +642,6 @@ def create_stop_zone(input_layer):
         if str(feat["area_type"]) != "MAI_bus_stop": continue
         geom = feat.geometry()
         poly = geom.asPolyline() if not geom.isEmpty() else []
-        # Görseli çizerken 5 node (kapalı dörtgen) ve ilk/son node aynılığını kontrol ediyoruz
         if not poly or len(poly) != 5 or poly[0] != poly[-1]: continue
         nf = QgsFeature(out.fields()); nf.setGeometry(geom)
         nf["orig_fid"] = feat.id(); nf["feature_type"] = "zone"
@@ -899,4 +881,57 @@ def show_selected_regulatory_elements(layer):
             sl = QgsSimpleMarkerSymbolLayer(); sl.setColor(QColor("blue")); sl.setSize(ICON_SIZE/2)
             symbol.changeSymbolLayer(0, sl)
         rule = QgsRuleBasedRenderer.Rule(symbol)
-        rule.setFilterExpression(f'"icon_code"=\'{icon_code}\' AND
+        rule.setFilterExpression(f'"icon_code"=\'{icon_code}\' AND "has_icon"={"true" if has_icon else "false"}')
+        rule.setLabel(icon_code if has_icon else f"[NO ICON] {icon_code}")
+        root_rule.appendChild(rule)
+    mem_layer.setRenderer(QgsRuleBasedRenderer(root_rule)); mem_layer.triggerRepaint()
+
+# =============================================================================
+#  SELECTION HANDLER
+# =============================================================================
+
+def on_selection_changed():
+    layer = iface.activeLayer()
+    if not layer or not isinstance(layer, QgsVectorLayer): return
+    update_arrows(layer)
+    update_yield_to_highlights(layer)
+    show_selected_regulatory_elements(layer)
+
+# =============================================================================
+#  PUBLIC ENTRY POINT  (called by QcSuitePlugin or run standalone)
+# =============================================================================
+
+def run_qc(layer=None):
+    if layer is None:
+        layer = iface.activeLayer()
+    if not layer or not isinstance(layer, QgsVectorLayer):
+        log("No active vector layer found.", Qgis.Critical)
+        return
+
+    if not os.path.isdir(icon_folder):
+        log(f"style_images not found at: {icon_folder} — traffic sign icons will be missing.", Qgis.Warning)
+
+    for name in ["Lane Morphology", "Speed Limit", "Passable/Non-Passable Regions",
+                 "One-way / Bidirectional Way", "Stop Zones",
+                 ARROW_LAYER_NAME, YIELD_TO_LAYER_NAME,
+                 REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME, INTEGRITY_LAYER_NAME]:
+        remove_layer_by_name(name)
+
+    render_integrity_issues(check_lane_integrity(), layer)
+
+    create_oneway_layer(layer)
+    create_stop_zone(layer)
+    create_lane_morphology_layer(layer)
+    create_speed_limit_layer(layer)
+    create_passable_layer(layer)
+    add_traffic_elements(layer)
+
+    iface.setActiveLayer(layer)
+    try:   layer.selectionChanged.disconnect()
+    except Exception: pass
+    layer.selectionChanged.connect(on_selection_changed)
+
+    log("QC Tool ready. Select a centerline to inspect driving direction, yield_to and related traffic rules.", Qgis.Success)
+
+if __name__ == "__console__":
+    run_qc()
