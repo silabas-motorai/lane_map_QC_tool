@@ -1012,4 +1012,4 @@ class DashcamController:
         dlg = SetupDialog(html, roots, parent=parent)
         if dlg.exec_() == QDialog.Accepted:
             _save_settings(dlg.get_html(), dlg.get_roots(), radius)
-            self.reload()s
+            self.reload()
