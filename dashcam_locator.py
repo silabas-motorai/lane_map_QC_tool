@@ -141,8 +141,7 @@ class SetupDialog(QDialog):
         fg = QGroupBox("Frames root folders  (one per region)")
         fl = QVBoxLayout(fg)
         note = QLabel(
-            "ℹ  Only routes with frames in a registered folder will appear "
-            "when you click the map."
+            "ℹ  "Only routes with frames in these folders will appear on the map""
         )
         note.setStyleSheet("color:#555;font-size:11px;")
         fl.addWidget(note)
