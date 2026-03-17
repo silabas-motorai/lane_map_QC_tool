@@ -1,3 +1,7 @@
+"""
+Dashcam Locator  v3
+=====================
+"""
 import os
 import re
 import math
@@ -80,12 +84,10 @@ def _crs_uses_degrees(crs):
     except Exception:
         return "degree" in crs.toProj().lower()
 
-
 def _metres_to_crs(metres, crs):
     if _crs_uses_degrees(crs):
         return metres * DEG_PER_METRE
     return metres
-
 
 # =============================================================================
 # SETTINGS HELPERS
@@ -269,9 +271,9 @@ class RoutePicker(QWidget):
 
         hdr = QHBoxLayout()
         lbl = QLabel(
-            "<b>Routes passing through your click</b><br>"
-            "<i>Single-click</i> to preview selected route on map - "
-            "<i>Double-click</i> to view selected route's frames"
+            "<b>Dahcam data routes around the clicked point</b><br>"
+            "<i>Single-click</i> to preview selected route on map<br>"
+            "<i>Double-click</i> to view selected route frames"
         )
         lbl.setWordWrap(True)
         hdr.addWidget(lbl, 1)
@@ -288,8 +290,8 @@ class RoutePicker(QWidget):
         lay.addWidget(self.list_w)
 
         foot = QLabel(
-            "Coloured arrow = START (driving direction)   ·   "
-            "Coloured circle = END of route"
+            "White arrow = START of the    ·   "
+            "Coloured circle = END of the route"
         )
         foot.setStyleSheet("color:#555;font-size:10px;")
         lay.addWidget(foot)
@@ -386,85 +388,85 @@ class RouteHighlightManager:
         self._add_to_map()
 
     def clear(self):
-        # Sadece tek bir katman var, onu kaldırıyoruz. Alt kırılımlar / gruplar yok.
+        # Remove the single route layer
         for lyr in list(QgsProject.instance().mapLayers().values()):
             if lyr.name() == self.LAYER_NAME:
                 QgsProject.instance().removeMapLayer(lyr)
         self.line_lyr = None
 
     def _style_lines(self):
-            from qgis.core import (QgsMarkerLineSymbolLayer,
-                                    QgsSimpleMarkerSymbolLayer as _SML)
-            root_rule = QgsRuleBasedRenderer.Rule(None)
-            seen = set()
+        from qgis.core import (QgsMarkerLineSymbolLayer,
+                                QgsSimpleMarkerSymbolLayer as _SML)
+        root_rule = QgsRuleBasedRenderer.Rule(None)
+        seen = set()
+        
+        for feat in self.line_lyr.getFeatures():
+            c = feat["color"]
+            if c in seen: continue
+            seen.add(c)
             
-            for feat in self.line_lyr.getFeatures():
-                c = feat["color"]
-                if c in seen: continue
-                seen.add(c)
-                
-                sym = QgsLineSymbol()
+            sym = QgsLineSymbol()
 
-                # 1. Kalın beyaz zemin (Kontrast için)
-                outline = QgsSimpleLineSymbolLayer.create({"color": "#ffffff", "width": "5.0"})
-                sym.changeSymbolLayer(0, outline)
+            # White outline for contrast
+            outline = QgsSimpleLineSymbolLayer.create({"color": "#ffffff", "width": "5.0"})
+            sym.changeSymbolLayer(0, outline)
 
-                # 2. Renkli ana çizgi
-                sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "3.0"})
-                sym.appendSymbolLayer(sl)
+            # Main colored line
+            sl = QgsSimpleLineSymbolLayer.create({"color": c, "width": "3.0"})
+            sym.appendSymbolLayer(sl)
 
-                # 3. Yön okları (Çizgi boyunca aralıklarla tekrar eden beyaz oklar)
-                dir_sym = QgsMarkerSymbol()
-                dir_sl  = _SML()
-                dir_sl.setShape(_SML.Shape.ArrowHead)      # Yatay ok
-                dir_sl.setColor(QColor("#ffffff"))
-                dir_sl.setStrokeColor(QColor("#ffffff"))
-                dir_sl.setSize(5.0)
-                dir_sl.setStrokeWidth(0.5)
-                dir_sym.changeSymbolLayer(0, dir_sl)
+            # Interval directional arrows
+            dir_sym = QgsMarkerSymbol()
+            dir_sl  = _SML()
+            dir_sl.setShape(_SML.Shape.ArrowHead)
+            dir_sl.setColor(QColor("#ffffff"))
+            dir_sl.setStrokeColor(QColor("#ffffff"))
+            dir_sl.setSize(5.0)
+            dir_sl.setStrokeWidth(0.5)
+            dir_sym.changeSymbolLayer(0, dir_sl)
 
-                mll_dir = QgsMarkerLineSymbolLayer()
-                mll_dir.setSubSymbol(dir_sym)
-                mll_dir.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
-                mll_dir.setInterval(20.0)
-                mll_dir.setOffsetAlongLine(5.0)
-                sym.appendSymbolLayer(mll_dir)
+            mll_dir = QgsMarkerLineSymbolLayer()
+            mll_dir.setSubSymbol(dir_sym)
+            mll_dir.setPlacement(QgsMarkerLineSymbolLayer.Placement.Interval)
+            mll_dir.setInterval(20.0)
+            mll_dir.setOffsetAlongLine(5.0)
+            sym.appendSymbolLayer(mll_dir)
 
-                # 4. Başlangıç Oku (ArrowHead kullanarak YATAY olmasını ve çizgiyle hizalanmasını sağladık)
-                start_sym = QgsMarkerSymbol()
-                start_sl  = _SML()
-                start_sl.setShape(_SML.Shape.ArrowHead)    # Arrow yerine ArrowHead kullanıldı
-                start_sl.setColor(QColor(c))
-                start_sl.setStrokeColor(QColor("#ffffff")) # Çizgiden ayrışması için beyaz ince çerçeve
-                start_sl.setStrokeWidth(0.8)
-                start_sl.setSize(7.0)
-                start_sym.changeSymbolLayer(0, start_sl)
+            # Start marker
+            start_sym = QgsMarkerSymbol()
+            start_sl  = _SML()
+            start_sl.setShape(_SML.Shape.ArrowHead)
+            start_sl.setColor(QColor(c))
+            start_sl.setStrokeColor(QColor("#ffffff"))
+            start_sl.setStrokeWidth(0.8)
+            start_sl.setSize(7.0)
+            start_sym.changeSymbolLayer(0, start_sl)
 
-                mll_start = QgsMarkerLineSymbolLayer()
-                mll_start.setSubSymbol(start_sym)
-                mll_start.setPlacement(QgsMarkerLineSymbolLayer.Placement.FirstVertex)
-                sym.appendSymbolLayer(mll_start)
+            mll_start = QgsMarkerLineSymbolLayer()
+            mll_start.setSubSymbol(start_sym)
+            mll_start.setPlacement(QgsMarkerLineSymbolLayer.Placement.FirstVertex)
+            sym.appendSymbolLayer(mll_start)
 
-                # 5. Bitiş Yuvarlağı
-                end_sym = QgsMarkerSymbol()
-                end_sl  = _SML()
-                end_sl.setShape(_SML.Shape.Circle)
-                end_sl.setColor(QColor(c))
-                end_sl.setStrokeColor(QColor("#ffffff"))
-                end_sl.setStrokeWidth(0.6)
-                end_sl.setSize(3.5)                        # Lejantta sırıtmaması için biraz daha küçültüldü
-                end_sym.changeSymbolLayer(0, end_sl)
+            # End marker
+            end_sym = QgsMarkerSymbol()
+            end_sl  = _SML()
+            end_sl.setShape(_SML.Shape.Circle)
+            end_sl.setColor(QColor(c))
+            end_sl.setStrokeColor(QColor("#ffffff"))
+            end_sl.setStrokeWidth(0.6)
+            end_sl.setSize(3.5)
+            end_sym.changeSymbolLayer(0, end_sl)
 
-                mll_end = QgsMarkerLineSymbolLayer()
-                mll_end.setSubSymbol(end_sym)
-                mll_end.setPlacement(QgsMarkerLineSymbolLayer.Placement.LastVertex)
-                sym.appendSymbolLayer(mll_end)
+            mll_end = QgsMarkerLineSymbolLayer()
+            mll_end.setSubSymbol(end_sym)
+            mll_end.setPlacement(QgsMarkerLineSymbolLayer.Placement.LastVertex)
+            sym.appendSymbolLayer(mll_end)
 
-                rule = QgsRuleBasedRenderer.Rule(sym)
-                rule.setFilterExpression(f'"color" = \'{c}\'')
-                root_rule.appendChild(rule)
-                
-            self.line_lyr.setRenderer(QgsRuleBasedRenderer(root_rule))
+            rule = QgsRuleBasedRenderer.Rule(sym)
+            rule.setFilterExpression(f'"color" = \'{c}\'')
+            root_rule.appendChild(rule)
+            
+        self.line_lyr.setRenderer(QgsRuleBasedRenderer(root_rule))
 
     def _add_labels(self):
         pal = QgsPalLayerSettings()
@@ -480,7 +482,7 @@ class RouteHighlightManager:
         self.line_lyr.setLabelsEnabled(True)
 
     def _add_to_map(self):
-        # Doğrudan tek bir katman olarak ekliyoruz. Sublayer veya grup yok.
+        # Add directly as a single layer without groups
         QgsProject.instance().addMapLayer(self.line_lyr)
 
 # =============================================================================
@@ -1010,4 +1012,4 @@ class DashcamController:
         dlg = SetupDialog(html, roots, parent=parent)
         if dlg.exec_() == QDialog.Accepted:
             _save_settings(dlg.get_html(), dlg.get_roots(), radius)
-            self.reload()
+            self.reload()s
