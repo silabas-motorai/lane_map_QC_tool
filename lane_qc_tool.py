@@ -21,7 +21,6 @@ import os, sys, random, inspect
 #  CONSTANTS
 # =============================================================================
 
-# Way IDs whose geometry runs east→west (need reversal for flow direction)
 REVERSE_WAY_IDS = {100, 101, 102, 400, 401, 402, 403, 500}
 
 ARROW_LAYER_NAME    = "Driving Direction"
@@ -38,7 +37,6 @@ except NameError:
 
 icon_folder = os.path.join(script_dir, "style_images")
 
-# centerline way_id → (right_border_way_id, left_border_way_id) lookup
 WAY_PAIRS_MAP = {
     (2, 100): ([[100, 500]], [-1]),
     (2, 300): ([[300, 700]], [1]),
@@ -169,7 +167,7 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
     if not features:
         return []
 
-    all_lines, stop_wait_lines, bus_stops = [], [], []
+    all_lines, stop_wait_lines = [], []
     road_id_groups = defaultdict(list)
 
     for f in features:
@@ -180,9 +178,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
         if rid:
             road_id_groups[rid].append(f)
-
-        if a_type == 'mai_bus_stop':
-            bus_stops.append(f)
 
         if l_sub in ['de294', 'de341']:
             stop_wait_lines.append(f)
@@ -444,18 +439,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     issues.append({"way_id": wid, "road_id": rid,
                                    "point": pt, "type": "STOP_LINE_GAP"})
 
-
-    for f in bus_stops:
-        poly = get_polyline(f)
-        if poly:
-            if len(poly) != 5 or poly[0] != poly[-1]:
-                issues.append({
-                    "way_id": fld(f, 'way_id'),
-                    "road_id": fld(f, 'road_id'),
-                    "point": poly[0],
-                    "type": f"INVALID_STOP_ZONE_GEOMETRY (Expected closed 4-sided polygon, got {len(poly)} nodes)"
-                })
-
     for rid, feats in road_id_groups.items():
         uniq_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() != 'pedestrian_marking']
         way_ids = [str(fld(f, 'way_id')).strip() for f in uniq_feats if str(fld(f, 'way_id')).strip()]
@@ -642,11 +625,21 @@ def create_stop_zone(input_layer):
         if str(feat["area_type"]) != "MAI_bus_stop": continue
         geom = feat.geometry()
         poly = geom.asPolyline() if not geom.isEmpty() else []
-        if not poly or len(poly) != 5 or poly[0] != poly[-1]: continue
+        if not poly: continue
+
         nf = QgsFeature(out.fields()); nf.setGeometry(geom)
-        nf["orig_fid"] = feat.id(); nf["feature_type"] = "zone"
-        nf["name"] = feat["name"] or ""; feats.append(nf)
+        nf["orig_fid"] = feat.id()
+
+        if len(poly) == 5 and poly[0] == poly[-1]:
+            nf["feature_type"] = "zone"
+            nf["name"] = feat["name"] or ""
+        else:
+            nf["feature_type"] = "problematic zone"
+            nf["name"] = f"INVALID ({len(poly)} nodes)"
+
+        feats.append(nf)
         if feat["closest_lane"]: related_refs.add(str(feat["closest_lane"]).strip())
+
     for feat in input_layer.getFeatures():
         if str(feat["lane_type"]).strip().lower() != "centerline": continue
         ref = f"{feat['road_id']}_{feat['way_id']}"
@@ -656,10 +649,12 @@ def create_stop_zone(input_layer):
         nf = QgsFeature(out.fields()); nf.setGeometry(geom)
         nf["orig_fid"] = feat.id(); nf["feature_type"] = "centerline"; nf["name"] = ""
         feats.append(nf)
+
     out.startEditing(); out.addFeatures(feats); out.commitChanges()
     renderer = QgsCategorizedSymbolRenderer("feature_type", [
-        QgsRendererCategory("zone",       QgsLineSymbol.createSimple({'color':'#0f18f6','width':'3'}), "Stop Zone"),
-        QgsRendererCategory("centerline", QgsLineSymbol.createSimple({'color':'#FF3333','width':'1.0','line_style':'dash'}), "Related Centerline"),
+        QgsRendererCategory("zone",             QgsLineSymbol.createSimple({'color':'#0f18f6','width':'3'}), "Stop Zone"),
+        QgsRendererCategory("problematic zone", QgsLineSymbol.createSimple({'color':'#ff00ff','width':'3','line_style':'dot'}), "Problematic Stop Zone"),
+        QgsRendererCategory("centerline",       QgsLineSymbol.createSimple({'color':'#FF3333','width':'1.0','line_style':'dash'}), "Related Centerline"),
     ])
     out.setRenderer(renderer)
     lbl = QgsPalLayerSettings(); lbl.fieldName = "name"; lbl.enabled = True
@@ -898,7 +893,7 @@ def on_selection_changed():
     show_selected_regulatory_elements(layer)
 
 # =============================================================================
-#  PUBLIC ENTRY POINT  (called by QcSuitePlugin or run standalone)
+#  PUBLIC ENTRY POINT
 # =============================================================================
 
 def run_qc(layer=None):
