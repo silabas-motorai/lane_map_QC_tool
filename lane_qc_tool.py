@@ -1,7 +1,3 @@
-# =============================================================================
-#  LANE MAP QC TOOL  ·  integrity check + visual analysis
-# =============================================================================
-
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import (
@@ -17,19 +13,19 @@ from qgis.utils import iface
 from collections import defaultdict, Counter
 import os, sys, random, inspect
 
-# =============================================================================
-#  CONSTANTS
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Constants
+# -----------------------------------------------------------------------------
 
 REVERSE_WAY_IDS = {100, 101, 102, 400, 401, 402, 403, 500}
 
-ARROW_LAYER_NAME      = "Driving Direction"
-YIELD_TO_LAYER_NAME   = "Yield To"
-REG_ALL_LAYER_NAME    = "Regulatory Elements"
-REG_SEL_LAYER_NAME    = "Related Regulatory Elements"
-INTEGRITY_LAYER_NAME  = "Integrity_Issues"
-ROAD_ID_ISSUES_LAYER_NAME = "Road_ID_Way_Issues"   # ← yeni katman
-GROUP_NAME            = "Lane Map Analysis"
+ARROW_LAYER_NAME          = "Driving Direction"
+YIELD_TO_LAYER_NAME       = "Yield To"
+REG_ALL_LAYER_NAME        = "Regulatory Elements"
+REG_SEL_LAYER_NAME        = "Related Regulatory Elements"
+INTEGRITY_LAYER_NAME      = "Integrity_Issues"
+ROAD_ID_ISSUES_LAYER_NAME = "Road_ID_Way_Issues"
+GROUP_NAME                = "Lane Map Analysis"
 
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +34,7 @@ except NameError:
 
 icon_folder = os.path.join(script_dir, "style_images")
 
+# key: (border_count, centerline_way_id)  value: (border_pairs, offsets)
 WAY_PAIRS_MAP = {
     (2, 100): ([[100, 500]], [-1]),
     (2, 300): ([[300, 700]], [1]),
@@ -84,9 +81,9 @@ WAY_PAIRS_MAP = {
     (7, 804): ([[803, 804], [804, 700]], [5, 6]),
 }
 
-# =============================================================================
-#  SHARED HELPERS
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
 
 def log(msg, level=Qgis.Info):
     iface.messageBar().pushMessage("QC Tool", msg, level=level, duration=5)
@@ -146,9 +143,9 @@ def remove_layer_by_name(name):
             QgsProject.instance().removeMapLayer(lyr)
             break
 
-# =============================================================================
-#  INTEGRITY CHECK  (snap / graph / stop-line — road_id kontrolü buradan kaldırıldı)
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Snap / graph / stop-line integrity check
+# -----------------------------------------------------------------------------
 
 def get_border_way_ids_for_centerline(roads_with_ref, cl_way_id):
     for (rwr, ref_wid), (pairs, _) in WAY_PAIRS_MAP.items():
@@ -437,6 +434,7 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
     return issues
 
+
 def render_integrity_issues(issues, source_layer):
     remove_layer_by_name(INTEGRITY_LAYER_NAME)
     if not issues:
@@ -444,8 +442,8 @@ def render_integrity_issues(issues, source_layer):
         return
     temp = QgsVectorLayer(f"Point?crs={source_layer.crs().authid()}", INTEGRITY_LAYER_NAME, "memory")
     pr = temp.dataProvider()
-    pr.addAttributes([QgsField("road_id", QVariant.String),
-                      QgsField("way_id",  QVariant.String),
+    pr.addAttributes([QgsField("road_id",    QVariant.String),
+                      QgsField("way_id",     QVariant.String),
                       QgsField("issue_type", QVariant.String)])
     temp.updateFields()
     seen = set()
@@ -463,26 +461,15 @@ def render_integrity_issues(issues, source_layer):
     add_layer_to_group(temp, visible=False)
     log(f"{temp.featureCount()} Topology / Integrity Issues Found.", Qgis.Warning)
 
-# =============================================================================
-#  ROAD-ID / WAY-ID INTEGRITY  (line-bazlı, ayrı katman)
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Road ID / Way ID scenario integrity check  (line-based, separate layer)
+# -----------------------------------------------------------------------------
 
 def check_road_id_way_integrity(layer):
-    """
-    Her road_id grubu için:
-      1. lane_type'a göre border (road/cycle/road_cycle) sayısını (rwr) ve
-         centerline'ları belirle.
-      2. WAY_PAIRS_MAP[(rwr, cl_way_id)] üzerinden bu senaryo için beklenen
-         way_id kümesini hesapla.
-      3. Grupta beklenmayan way_id'e sahip linestring'leri ve aynı road_id
-         içinde mükerrer way_id kullananları hata olarak işaretle.
-    Döndürülen her kayıt: {feat, road_id, way_id, issue_type}
-    """
     features = list(layer.getFeatures())
     if not features:
         return []
 
-    # road_id gruplama — pedestrian_marking hariç tüm lane tipleri
     road_id_groups = defaultdict(list)
     for f in features:
         lt  = str(fld(f, 'lane_type')).lower()
@@ -490,19 +477,18 @@ def check_road_id_way_integrity(layer):
         if rid and lt != 'pedestrian_marking':
             road_id_groups[rid].append(f)
 
+    def _is_valid_lane(f):
+        lt = str(fld(f, 'lane_type')).lower()
+        at = str(fld(f, 'area_type')).strip().lower()
+        if lt == 'centerline':
+            return True
+        if lt in ('road', 'cycle', 'road_cycle'):
+            return at in ('', 'none', 'null')
+        return False
+
     issues = []
 
     for rid, feats in road_id_groups.items():
-        # Sadece gerçek şerit çizgileri — area_type dolu olanlar dahil değil
-        def _is_valid_lane(f):
-            lt = str(fld(f, 'lane_type')).lower()
-            at = str(fld(f, 'area_type')).strip().lower()
-            if lt == 'centerline':
-                return True
-            if lt in ('road', 'cycle', 'road_cycle'):
-                return at in ('', 'none', 'null')
-            return False
-
         lane_feats = [f for f in feats if _is_valid_lane(f)]
         if not lane_feats:
             continue
@@ -527,12 +513,12 @@ def check_road_id_way_integrity(layer):
             expected_wids = {cl_wid_int}
             for pair in border_pairs:
                 expected_wids.update(pair)
-            expected_count = len(expected_wids)   # centerline + border toplamı
+            expected_count = len(expected_wids)
 
             if len(lane_feats) <= expected_count:
-                continue                           # senaryo sayısı aşılmamış, sorun yok
+                continue
 
-            # Beklenen kümede kaçar tane olduğunu say
+            # Count how many features exist per way_id within this road_id group
             wid_to_feats = defaultdict(list)
             for f in lane_feats:
                 try:
@@ -547,8 +533,7 @@ def check_road_id_way_integrity(layer):
                     continue
 
                 if f_wid_int in expected_wids:
-                    # Beklenen kümede var ama aynı way_id birden fazla kez kullanılmış
-                    # → road_id fazladan bir segmente atanmış (duplicate)
+                    # way_id is valid for this scenario but road_id is assigned to more features than expected
                     if len(wid_to_feats[f_wid_int]) > 1:
                         issues.append({
                             'feat':       f,
@@ -557,21 +542,21 @@ def check_road_id_way_integrity(layer):
                             'issue_type': (
                                 f'DUPLICATE_ROAD_ID '
                                 f'(road_id: {rid}, way_id: {f_wid_int} '
-                                f'{len(wid_to_feats[f_wid_int])} kez kullanılmış, '
-                                f'beklenen: 1)'
+                                f'used {len(wid_to_feats[f_wid_int])} times, '
+                                f'expected: 1)'
                             )
                         })
                 else:
-                    # Beklenen kümede hiç olmaması gereken way_id
+                    # way_id does not belong to this scenario at all
                     issues.append({
                         'feat':       f,
                         'road_id':    rid,
                         'way_id':     str(f_wid_int),
                         'issue_type': (
                             f'WRONG_WAY_ID '
-                            f'(road_id: {rid} için beklenen way_id\'ler: '
-                            f'{sorted(expected_wids)}, '
-                            f'bulunan: {f_wid_int})'
+                            f'(road_id: {rid} — '
+                            f'expected way_ids: {sorted(expected_wids)}, '
+                            f'found: {f_wid_int})'
                         )
                     })
 
@@ -579,13 +564,9 @@ def check_road_id_way_integrity(layer):
 
 
 def render_road_id_issues(issues, source_layer):
-    """
-    check_road_id_way_integrity sonuçlarını line-bazlı ayrı bir katmana yazar.
-    Her feature'ın gerçek geometrisi (LineString) kullanılır.
-    """
     remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
     if not issues:
-        log("Road ID / Way ID: Sorun bulunamadı.", Qgis.Success)
+        log("Road ID / Way ID: No issues found.", Qgis.Success)
         return
 
     temp = QgsVectorLayer(
@@ -600,8 +581,8 @@ def render_road_id_issues(issues, source_layer):
     ])
     temp.updateFields()
 
-    new_feats  = []
-    seen_keys  = set()                # (orig_fid, issue_type) → tekrar eklemeyi önle
+    new_feats = []
+    seen_keys = set()
 
     for iss in issues:
         orig = iss['feat']
@@ -614,7 +595,6 @@ def render_road_id_issues(issues, source_layer):
         if not geom or geom.isEmpty():
             continue
 
-        # Multipart ise ilk parçayı al
         if geom.isMultipart():
             parts = geom.asMultiPolyline()
             if not parts:
@@ -631,20 +611,14 @@ def render_road_id_issues(issues, source_layer):
     pr.addFeatures(new_feats)
     temp.updateExtents()
 
-    # Kırmızı çizgi sembolü
-    symbol = QgsLineSymbol.createSimple({
-        'color': '#FF0000',
-        'width': '1.8',
-        'line_style': 'solid'
-    })
+    symbol = QgsLineSymbol.createSimple({'color': '#FF0000', 'width': '1.8', 'line_style': 'solid'})
     temp.setRenderer(QgsSingleSymbolRenderer(symbol))
 
-    # Etiket: "RID:xxx  WID:yyy"
     lbl = QgsPalLayerSettings()
-    lbl.fieldName  = 'concat(\'road_id: \', "road_id", \'   way_id: \', "way_id")'
+    lbl.fieldName    = 'concat(\'road_id: \', "road_id", \'   way_id: \', "way_id")'
     lbl.isExpression = True
-    lbl.enabled    = True
-    lbl.placement  = QgsPalLayerSettings.Placement.Line
+    lbl.enabled      = True
+    lbl.placement    = QgsPalLayerSettings.Placement.Line
 
     tf  = QgsTextFormat()
     tf.setSize(7)
@@ -657,11 +631,11 @@ def render_road_id_issues(issues, source_layer):
     temp.setLabelsEnabled(True)
 
     add_layer_to_group(temp, visible=True)
-    log(f"{temp.featureCount()} Road ID / Way ID hatası bulundu.", Qgis.Warning)
+    log(f"{temp.featureCount()} Road ID / Way ID issues found.", Qgis.Warning)
 
-# =============================================================================
-#  VISUAL LAYERS
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Visual layers
+# -----------------------------------------------------------------------------
 
 def create_arrow_layer(name, color):
     for lyr in QgsProject.instance().mapLayers().values():
@@ -826,8 +800,8 @@ def create_lane_morphology_layer(input_layer):
     out.setRenderer(renderer)
     out.startEditing()
     for feat in input_layer.getFeatures():
-        morph    = str(feat["lane_morphology"]).strip().lower()
-        lt       = str(feat["lane_type"]).strip().lower() if "lane_type" in input_layer.fields().names() else ""
+        morph = str(feat["lane_morphology"]).strip().lower()
+        lt    = str(feat["lane_type"]).strip().lower() if "lane_type" in input_layer.fields().names() else ""
         if morph not in color_map or lt in ["cycle","road_cycle"]: continue
         geom = feat.geometry()
         if geom.isEmpty(): continue
@@ -879,7 +853,7 @@ def create_passable_layer(input_layer):
     out.setRenderer(renderer)
     buckets = {"passable":[], "non-passable":[], "physically non-passable":[]}
     for feat in input_layer.getFeatures():
-        lt = str(feat["lane_type"]).strip().lower() if feat["lane_type"] else ""
+        lt    = str(feat["lane_type"]).strip().lower() if feat["lane_type"] else ""
         ltype = str(feat["line_type"]).strip().lower() if feat["lane_type"] else ""
         lsub  = str(feat["line_sub"]).strip().lower()  if feat["line_sub"]  else ""
         at    = feat["area_type"]
@@ -888,7 +862,8 @@ def create_passable_layer(input_layer):
             status = "passable" if lsub == "dashed" else "non-passable" if lsub == "solid" else None
         elif ltype == "road_border":
             status = "physically non-passable"
-        else: status = None
+        else:
+            status = None
         if not status: continue
         geom = feat.geometry()
         if geom.isEmpty(): continue
@@ -908,11 +883,12 @@ def add_traffic_elements(layer):
 
     lbl_layer = QgsVectorLayer(f"Point?crs={layer.crs().authid()}", REG_ALL_LAYER_NAME, "memory")
     pr = lbl_layer.dataProvider()
-    pr.addAttributes([QgsField("line_sub",QVariant.String),QgsField("icon_code",QVariant.String),
-                      QgsField("has_icon",QVariant.Bool)])
+    pr.addAttributes([QgsField("line_sub",  QVariant.String),
+                      QgsField("icon_code", QVariant.String),
+                      QgsField("has_icon",  QVariant.Bool)])
     lbl_layer.updateFields(); lbl_layer.startEditing()
-    V_OFF = 0.01 if "4326" not in layer.crs().authid() else 0.0000001
-    type_idx = {t:i for i,t in enumerate(sorted({f["line_sub"] for f in reg_feats if f["line_sub"]}))}
+    V_OFF     = 0.01 if "4326" not in layer.crs().authid() else 0.0000001
+    type_idx  = {t:i for i,t in enumerate(sorted({f["line_sub"] for f in reg_feats if f["line_sub"]}))}
 
     for feat in reg_feats:
         lsub = feat["line_sub"]
@@ -925,7 +901,7 @@ def add_traffic_elements(layer):
         for code in codes:
             icon_code = (code[2:] if code.startswith("de") else code).strip()
             if not icon_code: continue
-            has_icon = os.path.exists(os.path.join(icon_folder, f"{icon_code}.png"))
+            has_icon  = os.path.exists(os.path.join(icon_folder, f"{icon_code}.png"))
             stack_pos = type_idx.get(lsub, 0)
             pt = QgsPointXY(centroid.x(), centroid.y() + stack_pos * V_OFF)
             pf = QgsFeature(lbl_layer.fields()); pf.setGeometry(QgsGeometry.fromPointXY(pt))
@@ -979,8 +955,10 @@ def show_selected_regulatory_elements(layer):
     if not mem_layer:
         mem_layer = QgsVectorLayer(f"Point?crs={layer.crs().authid()}", REG_SEL_LAYER_NAME, "memory")
         pr = mem_layer.dataProvider()
-        pr.addAttributes([QgsField("re_id",QVariant.String),QgsField("line_sub",QVariant.String),
-                          QgsField("icon_code",QVariant.String),QgsField("has_icon",QVariant.Bool)])
+        pr.addAttributes([QgsField("re_id",     QVariant.String),
+                          QgsField("line_sub",  QVariant.String),
+                          QgsField("icon_code", QVariant.String),
+                          QgsField("has_icon",  QVariant.Bool)])
         mem_layer.updateFields()
         add_layer_outside_group(mem_layer, visible=True, insert_position=3)
 
@@ -991,7 +969,7 @@ def show_selected_regulatory_elements(layer):
     reg_feats = [f for f in layer.getFeatures()
                  if f["line_type"] and str(f["line_type"]).strip().lower() in ["traffic_sign","traffic_light"]]
 
-    V_OFF = 0.01 if "4326" not in layer.crs().authid() else 0.0000001
+    V_OFF    = 0.01 if "4326" not in layer.crs().authid() else 0.0000001
     type_idx = {t:i for i,t in enumerate(sorted({str(f["line_sub"]).strip() for f in reg_feats if f["line_sub"]}))}
 
     feats = []
@@ -999,10 +977,10 @@ def show_selected_regulatory_elements(layer):
         for f in [x for x in reg_feats if str(x["re_id"]).strip() == tr]:
             geom = f.geometry()
             if geom.isEmpty(): continue
-            centroid = geom.centroid().asPoint()
-            lsub = str(f["line_sub"]).strip() if f["line_sub"] else "default_icon"
+            centroid  = geom.centroid().asPoint()
+            lsub      = str(f["line_sub"]).strip() if f["line_sub"] else "default_icon"
             icon_code = (lsub[2:] if lsub.startswith("de") else lsub).strip()
-            has_icon = os.path.exists(os.path.join(icon_folder, f"{icon_code}.png"))
+            has_icon  = os.path.exists(os.path.join(icon_folder, f"{icon_code}.png"))
             stack_pos = type_idx.get(lsub, 0)
             pt = QgsPointXY(centroid.x(), centroid.y() + stack_pos * V_OFF)
             pf = QgsFeature(mem_layer.fields()); pf.setGeometry(QgsGeometry.fromPointXY(pt))
@@ -1028,9 +1006,9 @@ def show_selected_regulatory_elements(layer):
         root_rule.appendChild(rule)
     mem_layer.setRenderer(QgsRuleBasedRenderer(root_rule)); mem_layer.triggerRepaint()
 
-# =============================================================================
-#  SELECTION HANDLER
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Selection handler
+# -----------------------------------------------------------------------------
 
 def on_selection_changed():
     layer = iface.activeLayer()
@@ -1039,9 +1017,9 @@ def on_selection_changed():
     update_yield_to_highlights(layer)
     show_selected_regulatory_elements(layer)
 
-# =============================================================================
-#  PUBLIC ENTRY POINT
-# =============================================================================
+# -----------------------------------------------------------------------------
+# Entry point
+# -----------------------------------------------------------------------------
 
 def run_qc(layer=None):
     if layer is None:
@@ -1057,13 +1035,10 @@ def run_qc(layer=None):
                  "One-way / Bidirectional Way", "Stop Zones",
                  ARROW_LAYER_NAME, YIELD_TO_LAYER_NAME,
                  REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME,
-                 INTEGRITY_LAYER_NAME, ROAD_ID_ISSUES_LAYER_NAME]:   # ← yeni katman da temizleniyor
+                 INTEGRITY_LAYER_NAME, ROAD_ID_ISSUES_LAYER_NAME]:
         remove_layer_by_name(name)
 
-    # Snap / graph / stop-line hataları → nokta katmanı
     render_integrity_issues(check_lane_integrity(), layer)
-
-    # Road ID / Way ID tutarsızlıkları → line katmanı (ayrı)
     render_road_id_issues(check_road_id_way_integrity(layer), layer)
 
     create_oneway_layer(layer)
