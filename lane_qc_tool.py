@@ -493,10 +493,17 @@ def check_road_id_way_integrity(layer):
     issues = []
 
     for rid, feats in road_id_groups.items():
-        # Sadece gerçek şerit çizgileri
-        lane_feats = [f for f in feats
-                      if str(fld(f, 'lane_type')).lower()
-                      in ('centerline', 'road', 'cycle', 'road_cycle')]
+        # Sadece gerçek şerit çizgileri — area_type dolu olanlar dahil değil
+        def _is_valid_lane(f):
+            lt = str(fld(f, 'lane_type')).lower()
+            at = str(fld(f, 'area_type')).strip().lower()
+            if lt == 'centerline':
+                return True
+            if lt in ('road', 'cycle', 'road_cycle'):
+                return at in ('', 'none', 'null')
+            return False
+
+        lane_feats = [f for f in feats if _is_valid_lane(f)]
         if not lane_feats:
             continue
 
