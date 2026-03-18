@@ -23,12 +23,13 @@ import os, sys, random, inspect
 
 REVERSE_WAY_IDS = {100, 101, 102, 400, 401, 402, 403, 500}
 
-ARROW_LAYER_NAME    = "Driving Direction"
-YIELD_TO_LAYER_NAME = "Yield To"
-REG_ALL_LAYER_NAME  = "Regulatory Elements"
-REG_SEL_LAYER_NAME  = "Related Regulatory Elements"
-INTEGRITY_LAYER_NAME = "Integrity_Issues"
-GROUP_NAME          = "Lane Map Analysis"
+ARROW_LAYER_NAME      = "Driving Direction"
+YIELD_TO_LAYER_NAME   = "Yield To"
+REG_ALL_LAYER_NAME    = "Regulatory Elements"
+REG_SEL_LAYER_NAME    = "Related Regulatory Elements"
+INTEGRITY_LAYER_NAME  = "Integrity_Issues"
+ROAD_ID_ISSUES_LAYER_NAME = "Road_ID_Way_Issues"   # ← yeni katman
+GROUP_NAME            = "Lane Map Analysis"
 
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -146,7 +147,7 @@ def remove_layer_by_name(name):
             break
 
 # =============================================================================
-#  INTEGRITY CHECK
+#  INTEGRITY CHECK  (snap / graph / stop-line — road_id kontrolü buradan kaldırıldı)
 # =============================================================================
 
 def get_border_way_ids_for_centerline(roads_with_ref, cl_way_id):
@@ -168,16 +169,11 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
         return []
 
     all_lines, stop_wait_lines = [], []
-    road_id_groups = defaultdict(list)
 
     for f in features:
         l_type = str(fld(f, 'lane_type')).lower()
         a_type = str(fld(f, 'area_type')).lower()
         l_sub  = str(fld(f, 'line_sub')).lower()
-        rid    = str(fld(f, 'road_id')).strip()
-
-        if rid:
-            road_id_groups[rid].append(f)
 
         if l_sub in ['de294', 'de341']:
             stop_wait_lines.append(f)
@@ -439,51 +435,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                     issues.append({"way_id": wid, "road_id": rid,
                                    "point": pt, "type": "STOP_LINE_GAP"})
 
-    for rid, feats in road_id_groups.items():
-        uniq_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() != 'pedestrian_marking']
-        way_ids = [str(fld(f, 'way_id')).strip() for f in uniq_feats if str(fld(f, 'way_id')).strip()]
-        counts = Counter(way_ids)
-
-        for wid, count in counts.items():
-            if count > 1:
-                err_feat = next(f for f in uniq_feats if str(fld(f, 'way_id')).strip() == wid)
-                poly = get_polyline(err_feat)
-                pt = poly[0] if poly else QgsPointXY(0,0)
-                issues.append({
-                    "way_id": wid,
-                    "road_id": rid,
-                    "point": pt,
-                    "type": "DUPLICATE_ROAD_WAY_ID"
-                })
-
-        lane_feats = [f for f in feats if str(fld(f, 'lane_type')).lower() in ['centerline', 'road', 'cycle', 'road_cycle']]
-        rwr = sum(1 for f in lane_feats if str(fld(f, 'lane_type')).lower() in ['road', 'cycle', 'road_cycle'])
-        centerlines = [f for f in lane_feats if str(fld(f, 'lane_type')).lower() == 'centerline']
-
-        if centerlines:
-            for cl in centerlines:
-                cl_wid = str(fld(cl, 'way_id')).strip()
-                try: cl_wid_int = int(cl_wid)
-                except: continue
-
-                pair_key = (rwr, cl_wid_int)
-                if pair_key in WAY_PAIRS_MAP:
-                    border_pairs, _ = WAY_PAIRS_MAP[pair_key]
-                    expected_borders = set()
-                    for pair in border_pairs:
-                        expected_borders.update(pair)
-                    expected_count = 1 + len(expected_borders)
-
-                    if len(lane_feats) > expected_count:
-                        poly = get_polyline(cl)
-                        pt = poly[0] if poly else QgsPointXY(0,0)
-                        issues.append({
-                            "way_id": cl_wid,
-                            "road_id": rid,
-                            "point": pt,
-                            "type": f"TOO_MANY_FEATURES_FOR_SCENARIO (Expected {expected_count}, found {len(lane_feats)})"
-                        })
-
     return issues
 
 def render_integrity_issues(issues, source_layer):
@@ -511,6 +462,193 @@ def render_integrity_issues(issues, source_layer):
     temp.setRenderer(QgsSingleSymbolRenderer(symbol))
     add_layer_to_group(temp, visible=False)
     log(f"{temp.featureCount()} Topology / Integrity Issues Found.", Qgis.Warning)
+
+# =============================================================================
+#  ROAD-ID / WAY-ID INTEGRITY  (line-bazlı, ayrı katman)
+# =============================================================================
+
+def check_road_id_way_integrity(layer):
+    """
+    Her road_id grubu için:
+      1. lane_type'a göre border (road/cycle/road_cycle) sayısını (rwr) ve
+         centerline'ları belirle.
+      2. WAY_PAIRS_MAP[(rwr, cl_way_id)] üzerinden bu senaryo için beklenen
+         way_id kümesini hesapla.
+      3. Grupta beklenmayan way_id'e sahip linestring'leri ve aynı road_id
+         içinde mükerrer way_id kullananları hata olarak işaretle.
+    Döndürülen her kayıt: {feat, road_id, way_id, issue_type}
+    """
+    features = list(layer.getFeatures())
+    if not features:
+        return []
+
+    # road_id gruplama — pedestrian_marking hariç tüm lane tipleri
+    road_id_groups = defaultdict(list)
+    for f in features:
+        lt  = str(fld(f, 'lane_type')).lower()
+        rid = str(fld(f, 'road_id')).strip()
+        if rid and lt != 'pedestrian_marking':
+            road_id_groups[rid].append(f)
+
+    issues = []
+
+    for rid, feats in road_id_groups.items():
+        # Sadece gerçek şerit çizgileri
+        lane_feats = [f for f in feats
+                      if str(fld(f, 'lane_type')).lower()
+                      in ('centerline', 'road', 'cycle', 'road_cycle')]
+        if not lane_feats:
+            continue
+
+        # --- Adım 1: Mükerrer way_id kontrolü (her durumda çalışır) ----------
+        wid_to_feats = defaultdict(list)
+        for f in lane_feats:
+            wid_str = str(fld(f, 'way_id')).strip()
+            if wid_str:
+                wid_to_feats[wid_str].append(f)
+
+        duplicate_fids = set()
+        for wid_str, wid_feats in wid_to_feats.items():
+            if len(wid_feats) > 1:
+                for f in wid_feats:
+                    duplicate_fids.add(f.id())
+                    issues.append({
+                        'feat':       f,
+                        'road_id':    rid,
+                        'way_id':     wid_str,
+                        'issue_type': 'DUPLICATE_WAY_ID'
+                    })
+
+        # --- Adım 2: WAY_PAIRS_MAP ile beklenen way_id kümesi kontrolü ------
+        rwr = sum(1 for f in lane_feats
+                  if str(fld(f, 'lane_type')).lower() in ('road', 'cycle', 'road_cycle'))
+        centerlines = [f for f in lane_feats
+                       if str(fld(f, 'lane_type')).lower() == 'centerline']
+
+        for cl in centerlines:
+            cl_wid_str = str(fld(cl, 'way_id')).strip()
+            try:
+                cl_wid_int = int(cl_wid_str)
+            except ValueError:
+                continue
+
+            pair_key = (rwr, cl_wid_int)
+            if pair_key not in WAY_PAIRS_MAP:
+                continue
+
+            border_pairs, _ = WAY_PAIRS_MAP[pair_key]
+            expected_wids = {cl_wid_int}
+            for pair in border_pairs:
+                expected_wids.update(pair)         # border way_id'leri ekle
+            expected_count = len(expected_wids)    # centerline + border adedi
+
+            if len(lane_feats) <= expected_count:
+                continue                            # sorun yok
+
+            # Beklenen kümede olmayan her linestring'i raporla
+            for f in lane_feats:
+                if f.id() in duplicate_fids:
+                    continue                        # zaten mükerrer olarak işaretli
+                try:
+                    f_wid_int = int(str(fld(f, 'way_id')).strip())
+                except ValueError:
+                    continue
+                if f_wid_int not in expected_wids:
+                    issues.append({
+                        'feat':       f,
+                        'road_id':    rid,
+                        'way_id':     str(f_wid_int),
+                        'issue_type': (
+                            f'WRONG_WAY_ID '
+                            f'(beklenen: {sorted(expected_wids)}, '
+                            f'bulunan toplam: {len(lane_feats)}, '
+                            f'beklenen toplam: {expected_count})'
+                        )
+                    })
+
+    return issues
+
+
+def render_road_id_issues(issues, source_layer):
+    """
+    check_road_id_way_integrity sonuçlarını line-bazlı ayrı bir katmana yazar.
+    Her feature'ın gerçek geometrisi (LineString) kullanılır.
+    """
+    remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
+    if not issues:
+        log("Road ID / Way ID: Sorun bulunamadı.", Qgis.Success)
+        return
+
+    temp = QgsVectorLayer(
+        f"LineString?crs={source_layer.crs().authid()}",
+        ROAD_ID_ISSUES_LAYER_NAME, "memory"
+    )
+    pr = temp.dataProvider()
+    pr.addAttributes([
+        QgsField("road_id",    QVariant.String),
+        QgsField("way_id",     QVariant.String),
+        QgsField("issue_type", QVariant.String),
+    ])
+    temp.updateFields()
+
+    new_feats  = []
+    seen_keys  = set()                # (orig_fid, issue_type) → tekrar eklemeyi önle
+
+    for iss in issues:
+        orig = iss['feat']
+        key  = (orig.id(), iss['issue_type'])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        geom = orig.geometry()
+        if not geom or geom.isEmpty():
+            continue
+
+        # Multipart ise ilk parçayı al
+        if geom.isMultipart():
+            parts = geom.asMultiPolyline()
+            if not parts:
+                continue
+            geom = QgsGeometry.fromPolylineXY(parts[0])
+
+        nf = QgsFeature(temp.fields())
+        nf.setGeometry(QgsGeometry(geom))
+        nf['road_id']    = str(iss['road_id'])
+        nf['way_id']     = str(iss['way_id'])
+        nf['issue_type'] = iss['issue_type']
+        new_feats.append(nf)
+
+    pr.addFeatures(new_feats)
+    temp.updateExtents()
+
+    # Kırmızı çizgi sembolü
+    symbol = QgsLineSymbol.createSimple({
+        'color': '#FF0000',
+        'width': '1.8',
+        'line_style': 'solid'
+    })
+    temp.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+    # Etiket: "RID:xxx  WID:yyy"
+    lbl = QgsPalLayerSettings()
+    lbl.fieldName  = 'concat(\'RID:\', "road_id", \'  WID:\', "way_id")'
+    lbl.isExpression = True
+    lbl.enabled    = True
+    lbl.placement  = QgsPalLayerSettings.Placement.Line
+
+    tf  = QgsTextFormat()
+    tf.setSize(7)
+    fnt = QFont("Arial"); fnt.setBold(True); tf.setFont(fnt)
+    buf = QgsTextBufferSettings()
+    buf.setEnabled(True); buf.setSize(0.8); tf.setBuffer(buf)
+    lbl.setFormat(tf)
+
+    temp.setLabeling(QgsVectorLayerSimpleLabeling(lbl))
+    temp.setLabelsEnabled(True)
+
+    add_layer_to_group(temp, visible=True)
+    log(f"{temp.featureCount()} Road ID / Way ID hatası bulundu.", Qgis.Warning)
 
 # =============================================================================
 #  VISUAL LAYERS
@@ -909,10 +1047,15 @@ def run_qc(layer=None):
     for name in ["Lane Morphology", "Speed Limit", "Passable/Non-Passable Regions",
                  "One-way / Bidirectional Way", "Stop Zones",
                  ARROW_LAYER_NAME, YIELD_TO_LAYER_NAME,
-                 REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME, INTEGRITY_LAYER_NAME]:
+                 REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME,
+                 INTEGRITY_LAYER_NAME, ROAD_ID_ISSUES_LAYER_NAME]:   # ← yeni katman da temizleniyor
         remove_layer_by_name(name)
 
+    # Snap / graph / stop-line hataları → nokta katmanı
     render_integrity_issues(check_lane_integrity(), layer)
+
+    # Road ID / Way ID tutarsızlıkları → line katmanı (ayrı)
+    render_road_id_issues(check_road_id_way_integrity(layer), layer)
 
     create_oneway_layer(layer)
     create_stop_zone(layer)
