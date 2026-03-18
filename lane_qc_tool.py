@@ -486,6 +486,29 @@ def check_road_id_way_integrity(layer):
             return at in ('', 'none', 'null')
         return False
 
+    scenario_expected = {}
+    for (rwr_k, wid_k), (bp, _) in WAY_PAIRS_MAP.items():
+        exp = {wid_k}
+        for p in bp:
+            exp.update(p)
+        scenario_expected[(rwr_k, wid_k)] = frozenset(exp)
+
+    def _pick_scenario(actual_wids):
+        # Prefer scenarios that are fully satisfied (expected ⊆ actual).
+        # Among those pick the one with fewest unexpected extras.
+        # If none fully satisfied, fall back to highest overlap.
+        complete = [(key, exp) for key, exp in scenario_expected.items()
+                    if exp <= actual_wids]
+        if complete:
+            return min(complete, key=lambda kv: len(actual_wids - kv[1]))[0]
+        best_key, best_overlap, best_unexpected = None, -1, float('inf')
+        for key, exp in scenario_expected.items():
+            overlap    = len(actual_wids & exp)
+            unexpected = len(actual_wids - exp)
+            if overlap > best_overlap or (overlap == best_overlap and unexpected < best_unexpected):
+                best_overlap, best_unexpected, best_key = overlap, unexpected, key
+        return best_key if best_overlap > 0 else None
+
     issues = []
 
     for rid, feats in road_id_groups.items():
@@ -493,94 +516,56 @@ def check_road_id_way_integrity(layer):
         if not lane_feats:
             continue
 
-        rwr = sum(1 for f in lane_feats
-                  if str(fld(f, 'lane_type')).lower() in ('road', 'cycle', 'road_cycle'))
-        centerlines = [f for f in lane_feats
-                       if str(fld(f, 'lane_type')).lower() == 'centerline']
-
-        actual_wids = set()
+        wid_to_feats = defaultdict(list)
         for f in lane_feats:
             try:
-                actual_wids.add(int(str(fld(f, 'way_id')).strip()))
+                wid_to_feats[int(str(fld(f, 'way_id')).strip())].append(f)
             except ValueError:
                 pass
 
-        for cl in centerlines:
-            cl_wid_str = str(fld(cl, 'way_id')).strip()
+        actual_wids = set(wid_to_feats.keys())
+        best_key    = _pick_scenario(actual_wids)
+        if best_key is None:
+            continue
+
+        expected = set(scenario_expected[best_key])
+
+        # Nothing to report if actual way_ids match exactly and no duplicates
+        has_wrong     = bool(actual_wids - expected)
+        has_duplicate = any(len(v) > 1 for wid, v in wid_to_feats.items() if wid in expected)
+        if not has_wrong and not has_duplicate:
+            continue
+
+        for f in lane_feats:
             try:
-                cl_wid_int = int(cl_wid_str)
+                f_wid_int = int(str(fld(f, 'way_id')).strip())
             except ValueError:
                 continue
 
-            pair_key = (rwr, cl_wid_int)
-            if pair_key not in WAY_PAIRS_MAP:
-                # rwr is likely corrupted by a misassigned feature from another road_id.
-                # Find the scenario whose expected way_id set best matches what is actually present.
-                best_key, best_score = None, -1
-                for (rwr_k, wid_k) in WAY_PAIRS_MAP:
-                    if wid_k != cl_wid_int:
-                        continue
-                    bp, _ = WAY_PAIRS_MAP[(rwr_k, wid_k)]
-                    exp = {wid_k}
-                    for p in bp:
-                        exp.update(p)
-                    score = len(actual_wids & exp)
-                    if score > best_score:
-                        best_score, best_key = score, (rwr_k, wid_k)
-                if best_key is None:
-                    continue
-                pair_key = best_key
-
-            border_pairs, _ = WAY_PAIRS_MAP[pair_key]
-            expected_wids = {cl_wid_int}
-            for pair in border_pairs:
-                expected_wids.update(pair)
-            expected_count = len(expected_wids)
-
-            if len(lane_feats) <= expected_count:
-                continue
-
-            # Count how many features exist per way_id within this road_id group
-            wid_to_feats = defaultdict(list)
-            for f in lane_feats:
-                try:
-                    wid_to_feats[int(str(fld(f, 'way_id')).strip())].append(f)
-                except ValueError:
-                    pass
-
-            for f in lane_feats:
-                try:
-                    f_wid_int = int(str(fld(f, 'way_id')).strip())
-                except ValueError:
-                    continue
-
-                if f_wid_int in expected_wids:
-                    # way_id is valid for this scenario but road_id is assigned to more features than expected
-                    if len(wid_to_feats[f_wid_int]) > 1:
-                        issues.append({
-                            'feat':       f,
-                            'road_id':    rid,
-                            'way_id':     str(f_wid_int),
-                            'issue_type': (
-                                f'DUPLICATE_ROAD_ID '
-                                f'(road_id: {rid}, way_id: {f_wid_int} '
-                                f'used {len(wid_to_feats[f_wid_int])} times, '
-                                f'expected: 1)'
-                            )
-                        })
-                else:
-                    # way_id does not belong to this scenario at all
+            if f_wid_int in expected:
+                if len(wid_to_feats[f_wid_int]) > 1:
                     issues.append({
                         'feat':       f,
                         'road_id':    rid,
                         'way_id':     str(f_wid_int),
                         'issue_type': (
-                            f'WRONG_WAY_ID '
-                            f'(road_id: {rid} — '
-                            f'expected way_ids: {sorted(expected_wids)}, '
-                            f'found: {f_wid_int})'
+                            f'DUPLICATE_ROAD_ID '
+                            f'(road_id: {rid}, way_id: {f_wid_int} '
+                            f'used {len(wid_to_feats[f_wid_int])} times, expected: 1)'
                         )
                     })
+            else:
+                issues.append({
+                    'feat':       f,
+                    'road_id':    rid,
+                    'way_id':     str(f_wid_int),
+                    'issue_type': (
+                        f'WRONG_WAY_ID '
+                        f'(road_id: {rid} — '
+                        f'expected way_ids: {sorted(expected)}, '
+                        f'found: {f_wid_int})'
+                    )
+                })
 
     return issues
 
