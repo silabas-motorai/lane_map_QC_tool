@@ -523,7 +523,7 @@ def check_road_id_way_integrity(layer):
                         'feat':       f,
                         'road_id':    rid,
                         'way_id':     wid_str,
-                        'issue_type': 'DUPLICATE_WAY_ID'
+                        'issue_type': 'DUPLICATE_ROAD_ID'
                     })
 
         # --- Adım 2: WAY_PAIRS_MAP ile beklenen way_id kümesi kontrolü ------
@@ -639,7 +639,7 @@ def render_road_id_issues(issues, source_layer):
 
     # Etiket: "RID:xxx  WID:yyy"
     lbl = QgsPalLayerSettings()
-    lbl.fieldName  = 'concat(\'RID:\', "road_id", \'  WID:\', "way_id")'
+    lbl.fieldName  = 'concat(\'road_id: \', "road_id", \'   way_id: \', "way_id")'
     lbl.isExpression = True
     lbl.enabled    = True
     lbl.placement  = QgsPalLayerSettings.Placement.Line
