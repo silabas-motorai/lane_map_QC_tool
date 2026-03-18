@@ -507,26 +507,6 @@ def check_road_id_way_integrity(layer):
         if not lane_feats:
             continue
 
-        # --- Adım 1: Mükerrer way_id kontrolü (her durumda çalışır) ----------
-        wid_to_feats = defaultdict(list)
-        for f in lane_feats:
-            wid_str = str(fld(f, 'way_id')).strip()
-            if wid_str:
-                wid_to_feats[wid_str].append(f)
-
-        duplicate_fids = set()
-        for wid_str, wid_feats in wid_to_feats.items():
-            if len(wid_feats) > 1:
-                for f in wid_feats:
-                    duplicate_fids.add(f.id())
-                    issues.append({
-                        'feat':       f,
-                        'road_id':    rid,
-                        'way_id':     wid_str,
-                        'issue_type': 'DUPLICATE_ROAD_ID'
-                    })
-
-        # --- Adım 2: WAY_PAIRS_MAP ile beklenen way_id kümesi kontrolü ------
         rwr = sum(1 for f in lane_feats
                   if str(fld(f, 'lane_type')).lower() in ('road', 'cycle', 'road_cycle'))
         centerlines = [f for f in lane_feats
@@ -546,30 +526,52 @@ def check_road_id_way_integrity(layer):
             border_pairs, _ = WAY_PAIRS_MAP[pair_key]
             expected_wids = {cl_wid_int}
             for pair in border_pairs:
-                expected_wids.update(pair)         # border way_id'leri ekle
-            expected_count = len(expected_wids)    # centerline + border adedi
+                expected_wids.update(pair)
+            expected_count = len(expected_wids)   # centerline + border toplamı
 
             if len(lane_feats) <= expected_count:
-                continue                            # sorun yok
+                continue                           # senaryo sayısı aşılmamış, sorun yok
 
-            # Beklenen kümede olmayan her linestring'i raporla
+            # Beklenen kümede kaçar tane olduğunu say
+            wid_to_feats = defaultdict(list)
             for f in lane_feats:
-                if f.id() in duplicate_fids:
-                    continue                        # zaten mükerrer olarak işaretli
+                try:
+                    wid_to_feats[int(str(fld(f, 'way_id')).strip())].append(f)
+                except ValueError:
+                    pass
+
+            for f in lane_feats:
                 try:
                     f_wid_int = int(str(fld(f, 'way_id')).strip())
                 except ValueError:
                     continue
-                if f_wid_int not in expected_wids:
+
+                if f_wid_int in expected_wids:
+                    # Beklenen kümede var ama aynı way_id birden fazla kez kullanılmış
+                    # → road_id fazladan bir segmente atanmış (duplicate)
+                    if len(wid_to_feats[f_wid_int]) > 1:
+                        issues.append({
+                            'feat':       f,
+                            'road_id':    rid,
+                            'way_id':     str(f_wid_int),
+                            'issue_type': (
+                                f'DUPLICATE_ROAD_ID '
+                                f'(road_id: {rid}, way_id: {f_wid_int} '
+                                f'{len(wid_to_feats[f_wid_int])} kez kullanılmış, '
+                                f'beklenen: 1)'
+                            )
+                        })
+                else:
+                    # Beklenen kümede hiç olmaması gereken way_id
                     issues.append({
                         'feat':       f,
                         'road_id':    rid,
                         'way_id':     str(f_wid_int),
                         'issue_type': (
                             f'WRONG_WAY_ID '
-                            f'(beklenen: {sorted(expected_wids)}, '
-                            f'bulunan toplam: {len(lane_feats)}, '
-                            f'beklenen toplam: {expected_count})'
+                            f'(road_id: {rid} için beklenen way_id\'ler: '
+                            f'{sorted(expected_wids)}, '
+                            f'bulunan: {f_wid_int})'
                         )
                     })
 
