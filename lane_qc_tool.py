@@ -23,8 +23,8 @@ ARROW_LAYER_NAME          = "Driving Direction"
 YIELD_TO_LAYER_NAME       = "Yield To"
 REG_ALL_LAYER_NAME        = "Regulatory Elements"
 REG_SEL_LAYER_NAME        = "Related Regulatory Elements"
-INTEGRITY_LAYER_NAME      = "Integrity_Issues"
-ROAD_ID_ISSUES_LAYER_NAME = "Road_ID_Way_Issues"
+INTEGRITY_LAYER_NAME      = "Integrity Issues"
+ROAD_ID_ISSUES_LAYER_NAME = "Lanelet Issues"
 GROUP_NAME                = "Lane Map Analysis"
 
 try:
@@ -466,109 +466,138 @@ def render_integrity_issues(issues, source_layer):
 # -----------------------------------------------------------------------------
 
 def check_road_id_way_integrity(layer):
+    """
+    Checks the integrity of road_id and way_id relationships.
+    Validates missing IDs, duplicates within a group, and ensures all 
+    lane components (borders and centerlines) share the same road_id.
+    """
     features = list(layer.getFeatures())
-    if not features:
+    if not features: 
         return []
 
     road_id_groups = defaultdict(list)
-    for f in features:
-        lt  = str(fld(f, 'lane_type')).lower()
-        rid = str(fld(f, 'road_id')).strip()
-        if rid and lt != 'pedestrian_marking':
-            road_id_groups[rid].append(f)
-
-    def _is_valid_lane(f):
-        lt = str(fld(f, 'lane_type')).lower()
-        at = str(fld(f, 'area_type')).strip().lower()
-        if lt == 'centerline':
-            return True
-        if lt in ('road', 'cycle', 'road_cycle'):
-            return at in ('', 'none', 'null')
-        return False
-
-    scenario_expected = {}
-    for (rwr_k, wid_k), (bp, _) in WAY_PAIRS_MAP.items():
-        exp = {wid_k}
-        for p in bp:
-            exp.update(p)
-        scenario_expected[(rwr_k, wid_k)] = frozenset(exp)
-
-    def _pick_scenario(actual_wids):
-        # Prefer scenarios that are fully satisfied (expected ⊆ actual).
-        # Among those pick the one with fewest unexpected extras.
-        # If none fully satisfied, fall back to highest overlap.
-        complete = [(key, exp) for key, exp in scenario_expected.items()
-                    if exp <= actual_wids]
-        if complete:
-            return min(complete, key=lambda kv: len(actual_wids - kv[1]))[0]
-        best_key, best_overlap, best_unexpected = None, -1, float('inf')
-        for key, exp in scenario_expected.items():
-            overlap    = len(actual_wids & exp)
-            unexpected = len(actual_wids - exp)
-            if overlap > best_overlap or (overlap == best_overlap and unexpected < best_unexpected):
-                best_overlap, best_unexpected, best_key = overlap, unexpected, key
-        return best_key if best_overlap > 0 else None
-
     issues = []
 
-    for rid, feats in road_id_groups.items():
-        lane_feats = [f for f in feats if _is_valid_lane(f)]
-        if not lane_feats:
-            continue
+    # Helper: Check if feature is a road border
+    def _is_border(f):
+        lt = str(fld(f, 'lane_type')).lower()
+        at = str(fld(f, 'area_type')).strip().lower()
+        return lt in ('road', 'cycle', 'road_cycle') and at in ('', 'none', 'null')
 
-        wid_to_feats = defaultdict(list)
-        for f in lane_feats:
-            try:
-                wid_to_feats[int(str(fld(f, 'way_id')).strip())].append(f)
-            except ValueError:
-                pass
+    # Helper: Check if feature is a centerline
+    def _is_centerline(f):
+        return str(fld(f, 'lane_type')).lower() == 'centerline'
 
-        actual_wids = set(wid_to_feats.keys())
-        best_key    = _pick_scenario(actual_wids)
-        if best_key is None:
-            continue
+    # Helper: Safely convert way_id to integer, handles 'NULL' or empty strings
+    def safe_int_way_id(f):
+        val = str(fld(f, 'way_id')).strip()
+        if not val or val.lower() == 'null': 
+            return None
+        try: 
+            return int(val)
+        except ValueError: 
+            return None
 
-        expected = set(scenario_expected[best_key])
-
-        # Nothing to report if actual way_ids match exactly and no duplicates
-        has_wrong     = bool(actual_wids - expected)
-        has_duplicate = any(len(v) > 1 for wid, v in wid_to_feats.items() if wid in expected)
-        if not has_wrong and not has_duplicate:
-            continue
-
-        for f in lane_feats:
-            try:
-                f_wid_int = int(str(fld(f, 'way_id')).strip())
-            except ValueError:
+    # --- STEP 1: Grouping and Basic Validation (Missing IDs) ---
+    for f in features:
+        rid = str(fld(f, 'road_id')).strip()
+        lt = str(fld(f, 'lane_type')).lower()
+        
+        if _is_border(f) or _is_centerline(f):
+            # Check for missing or NULL Road ID
+            if not rid or rid.lower() == 'null':
+                issues.append({
+                    'feat': f, 'road_id': 'NULL', 'way_id': str(fld(f, 'way_id')), 
+                    'issue_type': 'Missing Road ID'
+                })
+                continue
+            
+            # Check for missing or NULL Way ID
+            if safe_int_way_id(f) is None:
+                issues.append({
+                    'feat': f, 'road_id': rid, 'way_id': 'NULL', 
+                    'issue_type': 'Missing Way ID'
+                })
                 continue
 
-            if f_wid_int in expected:
-                if len(wid_to_feats[f_wid_int]) > 1:
-                    issues.append({
-                        'feat':       f,
-                        'road_id':    rid,
-                        'way_id':     str(f_wid_int),
-                        'issue_type': (
-                            f'DUPLICATE_ROAD_ID '
-                            f'(road_id: {rid}, way_id: {f_wid_int} '
-                            f'used {len(wid_to_feats[f_wid_int])} times, expected: 1)'
-                        )
-                    })
-            else:
+        # Add to group if it's not a pedestrian marking
+        if lt != 'pedestrian_marking':
+            road_id_groups[rid].append(f)
+
+    # --- STEP 2: Group-based Integrity and Duplicate Checks ---
+    for rid, feats in road_id_groups.items():
+        if not rid or rid.lower() == 'null': 
+            continue
+
+        # Count way_id occurrences within the group to find duplicates
+        way_id_counts = Counter()
+        for f in feats:
+            wid = safe_int_way_id(f)
+            if wid: 
+                way_id_counts[wid] += 1
+
+        border_feats = [f for f in feats if _is_border(f)]
+        cl_feats = [f for f in feats if _is_centerline(f)]
+        
+        # Sets of existing IDs for fast lookup
+        actual_b_wids = {safe_int_way_id(f) for f in border_feats if safe_int_way_id(f)}
+        actual_cl_wids = {safe_int_way_id(f) for f in cl_feats if safe_int_way_id(f)}
+
+        # A. DUPLICATE CHECK: Same Way ID cannot exist multiple times in one Road ID
+        for f in feats:
+            wid = safe_int_way_id(f)
+            if wid and way_id_counts[wid] > 1:
                 issues.append({
-                    'feat':       f,
-                    'road_id':    rid,
-                    'way_id':     str(f_wid_int),
-                    'issue_type': (
-                        f'WRONG_WAY_ID '
-                        f'(road_id: {rid} — '
-                        f'expected way_ids: {sorted(expected)}, '
-                        f'found: {f_wid_int})'
-                    )
+                    'feat': f, 'road_id': rid, 'way_id': str(wid),
+                    'issue_type': f'Lanelet relation could not be created (Duplicate Way ID {wid} in road_id {rid})'
+                })
+
+        # B. CENTERLINE PARTNER CHECK
+        for f in cl_feats:
+            cl_wid = safe_int_way_id(f)
+            if not cl_wid: 
+                continue
+            
+            found_match = False
+            for (rwr, mapping_wid), (border_pairs, _) in WAY_PAIRS_MAP.items():
+                for p in border_pairs:
+                    if cl_wid == int(f"{min(p)}12"):
+                        if set(p).issubset(actual_b_wids):
+                            found_match = True
+                            break
+                if found_match: 
+                    break
+            
+            if not found_match:
+                issues.append({
+                    'feat': f, 'road_id': rid, 'way_id': str(cl_wid),
+                    'issue_type': f'Lanelet relation could not be created (Centerline {cl_wid} lacks required borders in road_id {rid})'
+                })
+
+        # C. BORDER PARTNER CHECK
+        for f in border_feats:
+            b_wid = safe_int_way_id(f)
+            if not b_wid: 
+                continue
+
+            found_match = False
+            for (rwr, mapping_wid), (border_pairs, _) in WAY_PAIRS_MAP.items():
+                for p in border_pairs:
+                    if b_wid in p:
+                        expected_cl = int(f"{min(p)}12")
+                        if set(p).issubset(actual_b_wids) and expected_cl in actual_cl_wids:
+                            found_match = True
+                            break
+                if found_match: 
+                    break
+            
+            if not found_match:
+                issues.append({
+                    'feat': f, 'road_id': rid, 'way_id': str(b_wid),
+                    'issue_type': f'Lanelet relation could not be created (Border {b_wid} partner or centerline is missing in road_id {rid})'
                 })
 
     return issues
-
 
 def render_road_id_issues(issues, source_layer):
     remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
@@ -1047,7 +1076,6 @@ def run_qc(layer=None):
 
     render_integrity_issues(check_lane_integrity(), layer)
     render_road_id_issues(check_road_id_way_integrity(layer), layer)
-
     create_oneway_layer(layer)
     create_stop_zone(layer)
     create_lane_morphology_layer(layer)
