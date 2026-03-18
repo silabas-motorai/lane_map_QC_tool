@@ -498,6 +498,13 @@ def check_road_id_way_integrity(layer):
         centerlines = [f for f in lane_feats
                        if str(fld(f, 'lane_type')).lower() == 'centerline']
 
+        actual_wids = set()
+        for f in lane_feats:
+            try:
+                actual_wids.add(int(str(fld(f, 'way_id')).strip()))
+            except ValueError:
+                pass
+
         for cl in centerlines:
             cl_wid_str = str(fld(cl, 'way_id')).strip()
             try:
@@ -507,7 +514,22 @@ def check_road_id_way_integrity(layer):
 
             pair_key = (rwr, cl_wid_int)
             if pair_key not in WAY_PAIRS_MAP:
-                continue
+                # rwr is likely corrupted by a misassigned feature from another road_id.
+                # Find the scenario whose expected way_id set best matches what is actually present.
+                best_key, best_score = None, -1
+                for (rwr_k, wid_k) in WAY_PAIRS_MAP:
+                    if wid_k != cl_wid_int:
+                        continue
+                    bp, _ = WAY_PAIRS_MAP[(rwr_k, wid_k)]
+                    exp = {wid_k}
+                    for p in bp:
+                        exp.update(p)
+                    score = len(actual_wids & exp)
+                    if score > best_score:
+                        best_score, best_key = score, (rwr_k, wid_k)
+                if best_key is None:
+                    continue
+                pair_key = best_key
 
             border_pairs, _ = WAY_PAIRS_MAP[pair_key]
             expected_wids = {cl_wid_int}
