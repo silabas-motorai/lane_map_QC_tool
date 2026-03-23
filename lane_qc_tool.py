@@ -810,8 +810,8 @@ def create_stop_zone(input_layer):
             nf["feature_type"] = "zone"
             nf["name"] = feat["name"] or ""
         else:
-            nf["feature_type"] = "problematic zone"
-            nf["name"] = f"INVALID ({len(poly)} nodes)"
+            nf["feature_type"] = "invalid stop zone"
+            nf["name"] = f"INVALID ({len(poly) - 1} nodes, expected 4)"
 
         feats.append(nf)
         if feat["closest_lane"]: related_refs.add(str(feat["closest_lane"]).strip())
@@ -826,12 +826,19 @@ def create_stop_zone(input_layer):
         nf["orig_fid"] = feat.id(); nf["feature_type"] = "centerline"; nf["name"] = ""
         feats.append(nf)
 
+    # Only show the layer if there are any stop zone features at all
+    if not feats:
+        return
+
     out.startEditing(); out.addFeatures(feats); out.commitChanges()
-    renderer = QgsCategorizedSymbolRenderer("feature_type", [
-        QgsRendererCategory("zone",             QgsLineSymbol.createSimple({'color':'#0f18f6','width':'3'}), "Stop Zone"),
-        QgsRendererCategory("problematic zone", QgsLineSymbol.createSimple({'color':'#ff00ff','width':'3','line_style':'dot'}), "Problematic Stop Zone"),
-        QgsRendererCategory("centerline",       QgsLineSymbol.createSimple({'color':'#FF3333','width':'1.0','line_style':'dash'}), "Related Centerline"),
-    ])
+    categories = [
+        QgsRendererCategory("zone",       QgsLineSymbol.createSimple({'color':'#0f18f6','width':'3'}), "Stop Zone"),
+        QgsRendererCategory("centerline", QgsLineSymbol.createSimple({'color':'#FF3333','width':'1.0','line_style':'dash'}), "Related Centerline"),
+    ]
+    # Only add the invalid category to the legend if invalid zones actually exist
+    if any(nf["feature_type"] == "invalid stop zone" for nf in feats):
+        categories.insert(1, QgsRendererCategory("invalid stop zone", QgsLineSymbol.createSimple({'color':'#ff00ff','width':'3','line_style':'dot'}), "Invalid Stop Zone"))
+    renderer = QgsCategorizedSymbolRenderer("feature_type", categories)
     out.setRenderer(renderer)
     lbl = QgsPalLayerSettings(); lbl.fieldName = "name"; lbl.enabled = True
     lbl.placement = QgsPalLayerSettings.Placement.Line
