@@ -543,6 +543,15 @@ def check_road_id_way_integrity(layer):
         actual_b_wids = {safe_int_way_id(f) for f in border_feats if safe_int_way_id(f)}
         actual_cl_wids = {safe_int_way_id(f) for f in cl_feats if safe_int_way_id(f)}
 
+        # Map way_id → lane_type for all borders in this group (for cycle-pair detection)
+        border_lt_by_wid = {
+            safe_int_way_id(f): str(fld(f, 'lane_type')).lower()
+            for f in border_feats if safe_int_way_id(f)
+        }
+
+        def _is_cycle_wid(wid):
+            return border_lt_by_wid.get(wid, '') in ('cycle', 'road_cycle')
+
         # A. DUPLICATE CHECK: Same Way ID cannot exist multiple times in one Road ID
         for f in feats:
             wid = safe_int_way_id(f)
@@ -577,20 +586,30 @@ def check_road_id_way_integrity(layer):
         # C. BORDER PARTNER CHECK
         for f in border_feats:
             b_wid = safe_int_way_id(f)
-            if not b_wid: 
+            if not b_wid:
                 continue
 
             found_match = False
             for (rwr, mapping_wid), (border_pairs, _) in WAY_PAIRS_MAP.items():
                 for p in border_pairs:
-                    if b_wid in p:
-                        expected_cl = int(f"{min(p)}12")
-                        if set(p).issubset(actual_b_wids) and expected_cl in actual_cl_wids:
-                            found_match = True
-                            break
-                if found_match: 
+                    if b_wid not in p:
+                        continue
+                    partner_wid = next((w for w in p if w != b_wid), None)
+                    if partner_wid not in actual_b_wids:
+                        continue
+                    # If either border in this pair is cycle/road_cycle → cycle lanelet,
+                    # no centerline exists or is required.
+                    if _is_cycle_wid(b_wid) or _is_cycle_wid(partner_wid):
+                        found_match = True
+                        break
+                    # Road lanelet: also require the centerline
+                    expected_cl = int(f"{min(p)}12")
+                    if expected_cl in actual_cl_wids:
+                        found_match = True
+                        break
+                if found_match:
                     break
-            
+
             if not found_match:
                 issues.append({
                     'feat': f, 'road_id': rid, 'way_id': str(b_wid),
