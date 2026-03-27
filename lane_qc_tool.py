@@ -509,10 +509,10 @@ def check_road_id_way_integrity(layer):
         
         if _is_border(f) or _is_centerline(f):
             if not rid or rid.lower() == 'null':
-                issues.append({'feat': f, 'road_id': 'NULL', 'way_id': str(fld(f, 'way_id')), 'issue_type': 'Missing Road ID'})
+                issues.append({'feat': f, 'road_id': 'NULL', 'way_id': str(fld(f, 'way_id')), 'issue_type': 'Missing road_id'})
                 continue
             if safe_int_way_id(f) is None:
-                issues.append({'feat': f, 'road_id': rid, 'way_id': 'NULL', 'issue_type': 'Missing Way ID'})
+                issues.append({'feat': f, 'road_id': rid, 'way_id': 'NULL', 'issue_type': 'Missing way_id'})
                 continue
 
         if lt != 'pedestrian_marking':
