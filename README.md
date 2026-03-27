@@ -56,8 +56,8 @@ Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map l
 | **Passable/Non-Passable Regions** | Line | Lane borders marked as passable, non-passable and physically non-passable |
 | **Regulatory Elements** | Point | Regulatory elements with icons |
 | **Related Regulatory Elements** | Point | Regulatory elements linked to a selected lane centerline |
-| **Integrity Issues** | Point | Snapping gaps, stop-line connectivity, and routing errors |
-| **Lanelet Issues** | Line | Logical topology errors, Road ID / Way ID mismatches, missing partners, spatial ordering mismatches, and invalid yield_to constraints |
+| **Integrity Issues** | Point | Snapping gaps and routing errors |
+| **Lanelet Issues** | Line | Logical topology errors, road_id/way_id mismatches, way_id ordering mismatches, and invalid yield_to tags |
 | **Attribute Issues** | Point | Missing mandatory fields, invalid tags (typos), conditional attribute errors, and orphaned regulatory elements |
 
 *(Note: Issue layers such as Integrity Issues, Lanelet Issues, and Attribute Issues will automatically become visible if any errors are detected.)*
