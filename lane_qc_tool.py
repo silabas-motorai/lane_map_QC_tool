@@ -615,7 +615,59 @@ def check_road_id_way_integrity(layer):
                     'feat': f, 'road_id': rid, 'way_id': str(b_wid),
                     'issue_type': f'Lanelet relation could not be created (Border {b_wid} partner or centerline is missing in road_id {rid})'
                 })
+# --- STEP 3: Yield To Cycle Lane Minimum Way ID Check ---
+        if 'yield_to' in [field.name() for field in layer.fields()]:
+            actual_b_wids_by_rid = defaultdict(set)
+            border_lt_map = {}
+            for f in features:
+                rid = str(fld(f, 'road_id')).strip()
+                wid = safe_int_way_id(f)
+                if _is_border(f) and rid and rid.lower() != 'null' and wid is not None:
+                    actual_b_wids_by_rid[rid].add(wid)
+                    border_lt_map[(rid, wid)] = str(fld(f, 'lane_type')).lower()
+            
+            for f in features:
+                yt = str(fld(f, 'yield_to')).strip()
+                if not yt or yt.lower() == 'null': 
+                    continue
+                
+                my_rid = str(fld(f, 'road_id', 'NULL'))
+                my_wid = str(fld(f, 'way_id', 'NULL'))
 
+                for t in yt.split(","):
+                    t = t.strip()
+                    if "_" in t:
+                        parts = t.split("_")
+                        if len(parts) >= 2:
+                            ref_rid = parts[0]
+                            try:
+                                ref_wid = int(parts[1])
+                                
+                                if (ref_rid, ref_wid) in border_lt_map:
+                                    lt = border_lt_map[(ref_rid, ref_wid)]
+                                    
+                                    possible_partners = set()
+                                    for _, (border_pairs, _) in WAY_PAIRS_MAP.items():
+                                        for p in border_pairs:
+                                            if ref_wid in p:
+                                                partner_wid = p[0] if p[1] == ref_wid else p[1]
+                                                if partner_wid in actual_b_wids_by_rid[ref_rid]:
+                                                    partner_lt = border_lt_map.get((ref_rid, partner_wid), "")
+                                                    if lt in ('cycle', 'road_cycle') or partner_lt in ('cycle', 'road_cycle'):
+                                                        possible_partners.add(partner_wid)
+                                    
+                                    if possible_partners:
+                                        is_already_min = any(ref_wid < p for p in possible_partners)
+                                        
+                                        if not is_already_min:
+                                            best_partner = min(possible_partners, key=lambda x: abs(x - ref_wid))
+                                            
+                                            issues.append({
+                                                'feat': f, 'road_id': my_rid, 'way_id': my_wid,
+                                                'issue_type': f'Invalid yield_to: {ref_rid}_{ref_wid} forms a cycle lane (with {best_partner}). Must use min way_id: {best_partner}'
+                                            })
+                            except ValueError:
+                                pass
     return issues
 
 def render_road_id_issues(issues, source_layer):
