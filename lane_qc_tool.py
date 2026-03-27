@@ -442,9 +442,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
 def render_integrity_issues(issues, source_layer):
     remove_layer_by_name(INTEGRITY_LAYER_NAME)
-    if not issues:
-        log("All Lane Groups are Perfectly Snapped & Routed!", Qgis.Success)
-        return
     temp = QgsVectorLayer(f"Point?crs={source_layer.crs().authid()}", INTEGRITY_LAYER_NAME, "memory")
     pr = temp.dataProvider()
     pr.addAttributes([QgsField("road_id",    QVariant.String),
@@ -464,7 +461,7 @@ def render_integrity_issues(issues, source_layer):
                                            'outline_color': 'blue', 'outline_width': '0.6', 'size': '4.5'})
     temp.setRenderer(QgsSingleSymbolRenderer(symbol))
     add_layer_to_group(temp, visible=False)
-    log(f"{temp.featureCount()} Topology / Integrity Issues Found.", Qgis.Warning)
+    log(f"{temp.featureCount()} snapping / integrity issues found.", Qgis.Warning)
 
 # -----------------------------------------------------------------------------
 # Scenario Integrity Check (Road ID & Way ID valid combinations)
@@ -743,9 +740,6 @@ def check_road_id_way_integrity(layer):
 
 def render_road_id_issues(issues, source_layer):
     remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
-    if not issues:
-        log("Lanelet Issues: No issues found.", Qgis.Success)
-        return
 
     temp = QgsVectorLayer(
         f"LineString?crs={source_layer.crs().authid()}",
@@ -809,7 +803,7 @@ def render_road_id_issues(issues, source_layer):
     temp.setLabelsEnabled(True)
 
     add_layer_to_group(temp, visible=True)
-    log(f"{temp.featureCount()} Road ID / Way ID issues found.", Qgis.Warning)
+    log(f"{temp.featureCount()} lanelet issues found.", Qgis.Warning)
 
 # -----------------------------------------------------------------------------
 # Visual Feedback Layers
