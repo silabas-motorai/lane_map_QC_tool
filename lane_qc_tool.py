@@ -442,6 +442,8 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
 
 def render_integrity_issues(issues, source_layer):
     remove_layer_by_name(INTEGRITY_LAYER_NAME)
+    if not issues:
+            return
     temp = QgsVectorLayer(f"Point?crs={source_layer.crs().authid()}", INTEGRITY_LAYER_NAME, "memory")
     pr = temp.dataProvider()
     pr.addAttributes([QgsField("road_id",    QVariant.String),
@@ -449,6 +451,7 @@ def render_integrity_issues(issues, source_layer):
                       QgsField("issue_type", QVariant.String)])
     temp.updateFields()
     seen = set()
+    added_count = 0
     for iss in issues:
         sig = (round(iss['point'].x(), 5), round(iss['point'].y(), 5), iss['type'])
         if sig in seen: continue
@@ -456,6 +459,9 @@ def render_integrity_issues(issues, source_layer):
         feat = QgsFeature(); feat.setGeometry(QgsGeometry.fromPointXY(iss['point']))
         feat.setAttributes([str(iss['road_id']), str(iss['way_id']), iss['type']])
         pr.addFeature(feat)
+        added_count += 1
+    if added_count == 0:
+            return
     temp.updateExtents()
     symbol = QgsMarkerSymbol.createSimple({'name': 'circle', 'color': 'transparent',
                                            'outline_color': 'blue', 'outline_width': '0.6', 'size': '4.5'})
@@ -740,7 +746,8 @@ def check_road_id_way_integrity(layer):
 
 def render_road_id_issues(issues, source_layer):
     remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
-
+    if not issues:
+            return
     temp = QgsVectorLayer(
         f"LineString?crs={source_layer.crs().authid()}",
         ROAD_ID_ISSUES_LAYER_NAME, "memory"
@@ -779,7 +786,8 @@ def render_road_id_issues(issues, source_layer):
         nf['way_id']     = str(iss['way_id'])
         nf['issue_type'] = iss['issue_type']
         new_feats.append(nf)
-
+    if not new_feats:
+            return
     pr.addFeatures(new_feats)
     temp.updateExtents()
 
