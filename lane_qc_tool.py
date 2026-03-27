@@ -475,8 +475,8 @@ def render_integrity_issues(issues, source_layer):
 
 def check_road_id_way_integrity(layer):
     """
-    Validates logical group relationships: missing IDs, duplicate IDs,
-    orphaned lines, and validates holistic lanelet scenarios based on WAY_PAIRS_MAP.
+    Validates logical group relationships: missing or duplicate way_id/road_ids,
+    isolated lines, lanelet scenarios, and ordering of way_ids wrt. lane scenarios.
     """
     features = list(layer.getFeatures())
     if not features: 
@@ -509,21 +509,20 @@ def check_road_id_way_integrity(layer):
         
         if _is_border(f) or _is_centerline(f):
             if not rid or rid.lower() == 'null':
-                issues.append({'feat': f, 'road_id': 'NULL', 'way_id': str(fld(f, 'way_id')), 'issue_type': 'Missing road_id'})
+                issues.append({'feat': f, 'road_id': 'NULL', 'way_id': str(fld(f, 'way_id')), 'issue_type': 'Missing Road ID'})
                 continue
             if safe_int_way_id(f) is None:
-                issues.append({'feat': f, 'road_id': rid, 'way_id': 'NULL', 'issue_type': 'Missing way_id'})
+                issues.append({'feat': f, 'road_id': rid, 'way_id': 'NULL', 'issue_type': 'Missing Way ID'})
                 continue
 
         if lt != 'pedestrian_marking':
             road_id_groups[rid].append(f)
 
-    # --- STEP 2, 3 & 4: Core Logical Validations ---
+    # --- STEP 2, 3, 4 & 5: Core Logical and Spatial Validations ---
     for rid, feats in road_id_groups.items():
         if not rid or rid.lower() == 'null': 
             continue
 
-        # Flag to prevent holistic scenario check if basic rules fail
         group_has_errors = False
 
         way_id_counts = Counter()
@@ -605,7 +604,6 @@ def check_road_id_way_integrity(layer):
             if not found_match:
                 partners_str = "[" + ", ".join(map(str, sorted(possible_partners))) + "]" if possible_partners else "None"
                 
-                # Distinguish between accidentally assigned stray lines and isolated lines
                 if len(actual_b_wids) > 1:
                     issue_msg = f'Lanelet relation could not be created (Isolated border with way_id:{b_wid}, does not fit the scenario of road_id:{rid})'
                 else:
@@ -617,8 +615,7 @@ def check_road_id_way_integrity(layer):
                 })
                 group_has_errors = True
 
-        # --- STEP 4: Holistic Scenario Check ---
-        # Evaluate entire road_id group against WAY_PAIRS_MAP only if no base errors exist
+        # --- STEP 4: Lane Scenario Check ---
         if not group_has_errors and actual_b_wids:
             n_borders = len(actual_b_wids)
             allowed_pairs = []
@@ -686,13 +683,89 @@ def check_road_id_way_integrity(layer):
                                 'feat': f, 'road_id': safe_rid, 'way_id': str(b_wid),
                                 'issue_type': f'Lanelet relation could not be created (Invalid scenario, line with way_id:{b_wid} is incorrect for a {lane_desc} road. Found [{actual_str}], expected [{expected_str}])'
                             })
+                            group_has_errors = True
                         elif not best_match:
                             issues.append({
                                 'feat': f, 'road_id': safe_rid, 'way_id': str(b_wid),
                                 'issue_type': f'Lanelet relation could not be created (Invalid scenario, no valid {lane_desc} road configuration matches your group [{actual_str}])'
                             })
+                            group_has_errors = True
 
-    # --- STEP 5: Yield To Valid Minimum ID Check ---
+# --- STEP 5: WAY ID ORDERING CHECK  ---
+        if not group_has_errors and len(actual_b_wids) > 1:
+            valid_b_feats = [f for f in border_feats if safe_int_way_id(f) is not None]
+            if len(valid_b_feats) > 1:
+                valid_b_feats.sort(key=lambda f: safe_int_way_id(f))
+                ref_feat = valid_b_feats[0]
+                ref_geom = ref_feat.geometry()
+                
+                length = ref_geom.length()
+                mid_dist = length / 2.0
+                delta = length * 0.05 if length > 0 else 0
+                
+                pt_A = ref_geom.interpolate(max(0, mid_dist - delta)).asPoint()
+                pt_B = ref_geom.interpolate(min(length, mid_dist + delta)).asPoint()
+                
+                if pt_A != pt_B:
+                    spatial_order = []
+                    for f in valid_b_feats:
+                        geom = f.geometry()
+                        pt = geom.interpolate(geom.length() / 2.0).asPoint()
+                        signed_dist = (pt.x() - pt_A.x()) * (pt_B.y() - pt_A.y()) - (pt.y() - pt_A.y()) * (pt_B.x() - pt_A.x())
+                        spatial_order.append((signed_dist, safe_int_way_id(f), f))
+                    
+                    spatial_order.sort(key=lambda x: x[0])
+                    physical_wids = [x[1] for x in spatial_order]
+                    
+                    n_borders = len(actual_b_wids)
+                    allowed_pairs = []
+                    for (bc, _), (border_pairs, _) in WAY_PAIRS_MAP.items():
+                        if bc == n_borders:
+                            allowed_pairs.extend(border_pairs)
+                    
+                    scenario_edges = [p for p in allowed_pairs if p[0] in actual_b_wids and p[1] in actual_b_wids]
+                    
+                    sc_adj = defaultdict(list)
+                    for u, v in scenario_edges:
+                        sc_adj[u].append(v)
+                        sc_adj[v].append(u)
+                        
+                    endpoints = [node for node, neighbors in sc_adj.items() if len(neighbors) == 1]
+                    
+                    expected_seq = []
+                    if endpoints:
+                        start = endpoints[0]
+                        curr = start
+                        prev = None
+                        expected_seq.append(curr)
+                        while len(expected_seq) < len(actual_b_wids):
+                            next_nodes = [n for n in sc_adj[curr] if n != prev]
+                            if not next_nodes: break
+                            prev = curr
+                            curr = next_nodes[0]
+                            expected_seq.append(curr)
+                    else:
+                        expected_seq = sorted(list(actual_b_wids))
+                        
+                    expected_seq_rev = list(reversed(expected_seq))
+                    
+                    if physical_wids != expected_seq and physical_wids != expected_seq_rev:
+                        actual_str = "-".join(map(str, physical_wids))
+                        best_expected = expected_seq if physical_wids[0] == expected_seq[0] else expected_seq_rev
+                        expected_str = "-".join(map(str, best_expected))
+                        
+                        valid_cl_feats = [cf for cf in cl_feats if safe_int_way_id(cf) is not None]
+                        for f in valid_b_feats + valid_cl_feats:
+                            issues.append({
+                                'feat': f, 
+                                'road_id': rid, 
+                                'way_id': str(safe_int_way_id(f)),
+                                'issue_type': f'Lanelet relation could not be created (Order mismatch, order of border lines [{actual_str}] does not match logical way_id order [{expected_str}])'
+                            })
+
+
+
+    # --- STEP 6: Yield To Valid Minimum ID Check ---
     if 'yield_to' in [field.name() for field in layer.fields()]:
         actual_b_wids_by_rid = defaultdict(set)
         border_lt_map = {}
@@ -737,7 +810,7 @@ def check_road_id_way_integrity(layer):
                                         best_partner = min(possible_partners, key=lambda x: abs(x - ref_wid))
                                         issues.append({
                                             'feat': f, 'road_id': my_rid, 'way_id': my_wid,
-                                            'issue_type': f'Invalid yield_to, {ref_rid}_{ref_wid} forms a cycle lane (with {best_partner}). Must use min way_id: {best_partner}'
+                                            'issue_type': f'Lanelet relation could not be created (Invalid yield_to: {ref_rid}_{ref_wid} forms a cycle lane with way_id {best_partner}. Must use min way_id: {best_partner})'
                                         })
                         except ValueError:
                             pass
