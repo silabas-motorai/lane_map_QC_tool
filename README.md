@@ -1,6 +1,6 @@
 # Lane Map QC Tool — QGIS Plugin
 
-QGIS plugin for lane map quality control. Combines visual QC layers, lane integrity checking (snapping & routing), dashcam frame viewer, and street-level imagery (Google Street View / Mapillary).
+QGIS plugin for comprehensive HD lane map quality control. Combines visual QC layers, topological connectivity checks (snapping & border match), logical lane scenario validation, attribute completeness check, along with dashcam frame viewer and street-level imagery (Google Street View / Mapillary).
 
 <img width="1911" height="873" alt="Screenshot from 2026-03-16 16-08-22" src="https://github.com/user-attachments/assets/2649eb40-bb5e-469a-82b5-494009cefbf5" />
 
@@ -53,10 +53,14 @@ Click **🗺 Lane Map Quality Check** in the toolbar and select an HD lane map l
 | **Stop Zones** | Line | Boundaries flagged as stop zone areas and related closest centerline |
 | **Lane Morphology** | Line | Lane centerline geometry classified by lane morphology types |
 | **Speed Limit** | Line | Lane centerlines colored by assigned speed limit value |
-| **Passable/Non-Passable Regions** | Line | Lane borders marked as passable, non-passable and pyhsically non-passable |
+| **Passable/Non-Passable Regions** | Line | Lane borders marked as passable, non-passable and physically non-passable |
 | **Regulatory Elements** | Point | Regulatory elements with icons |
 | **Related Regulatory Elements** | Point | Regulatory elements linked to a selected lane centerline |
-| **Integrity_Issues** | Point | Snapping gaps, and routing errors |
+| **Integrity Issues** | Point | Snapping gaps, stop-line connectivity, and routing errors |
+| **Lanelet Issues** | Line | Logical topology errors, Road ID / Way ID mismatches, missing partners, spatial ordering mismatches, and invalid yield_to constraints |
+| **Attribute Issues** | Point | Missing mandatory fields, invalid tags (typos), conditional attribute errors, and orphaned regulatory elements |
+
+*(Note: Issue layers such as Integrity Issues, Lanelet Issues, and Attribute Issues will automatically become visible if any errors are detected.)*
 
 ### Dashcam / Street View
 
@@ -74,7 +78,7 @@ Click **📂 Set Dashcam Paths** to configure:
 
 Both paths should point to the same parent folder, for example:
 
-```
+```text
 dashcam/
 ├── geolocated_videos.html   ← Overview HTML
 ├── 20251104_142838_0357_N_A/
