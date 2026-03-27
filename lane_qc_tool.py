@@ -26,6 +26,7 @@ REG_SEL_LAYER_NAME        = "Related Regulatory Elements"
 INTEGRITY_LAYER_NAME      = "Integrity Issues"
 ROAD_ID_ISSUES_LAYER_NAME = "Lanelet Issues"
 GROUP_NAME                = "Lane Map Analysis"
+ATTRIBUTE_ISSUES_LAYER_NAME = "Attribute Issues"
 
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -817,6 +818,200 @@ def check_road_id_way_integrity(layer):
 
     return issues
 
+# -----------------------------------------------------------------------------
+# Attribute Completeness & Rule Checks
+# -----------------------------------------------------------------------------
+
+def check_attribute_completeness(layer):
+    """
+    Checks specific attribute rules: mandatory fields, conditional requirements,
+    unique constraints, valid tag values (typo checks), and relational linkages.
+    """
+    features = list(layer.getFeatures())
+    if not features:
+        return []
+
+    issues = []
+
+    def is_empty(val):
+        if val is None: return True
+        s = str(val).strip().lower()
+        return s in ('', 'null', 'none')
+
+    re_id_counts = Counter()
+    all_re_ids = set()
+    referenced_re_ids = set()
+
+    valid_lane_types = {'road', 'cycle', 'road_cycle', 'regulatory_element', 'pedestrian_marking', 'centerline'}
+    valid_line_types = {'line_thin', 'road_border', 'traffic_sign', 'traffic_light', 'right_of_way'}
+    valid_morphs     = {'straight', 'curve', 'intersection', 'split', 'merge', 'roundabout'}
+    valid_area_types = {'parking', 'exit', 'mai_bus_stop'}
+    valid_oneway     = {'yes', 'no'}
+
+    # Pre-process: Collect re_ids and traffic_rule linkages
+    for f in features:
+        re_val = str(fld(f, 're_id')).strip()
+        if not is_empty(re_val) and str(fld(f, 'lane_type')).strip().lower() == 'regulatory_element':
+            re_id_counts[re_val] += 1
+            all_re_ids.add(re_val)
+
+        tr_val = str(fld(f, 'traffic_rule')).strip()
+        if not is_empty(tr_val):
+            for t in tr_val.split(","):
+                referenced_re_ids.add(t.strip())
+
+    for f in features:
+        geom = f.geometry()
+        if not geom or geom.isEmpty():
+            continue
+            
+        pt = geom.centroid().asPoint()
+        fid = f.id()
+
+        # Reading and standardizing values to lowercase for robust checks
+        line_type       = str(fld(f, 'line_type')).strip().lower()
+        line_sub        = str(fld(f, 'line_sub')).strip()
+        lane_type       = str(fld(f, 'lane_type')).strip().lower()
+        area_type       = str(fld(f, 'area_type')).strip().lower()
+        road_id         = str(fld(f, 'road_id')).strip()
+        way_id          = str(fld(f, 'way_id')).strip()
+        speed_limit     = str(fld(f, 'speed_limit')).strip()
+        lane_morph      = str(fld(f, 'lane_morphology')).strip().lower()
+        closest_lane    = str(fld(f, 'closest_lane')).strip()
+        name            = str(fld(f, 'name')).strip()
+        re_id           = str(fld(f, 're_id')).strip()
+        area_id         = str(fld(f, 'area_id')).strip()
+        one_way         = str(fld(f, 'one_way')).strip().lower()
+        traffic_rule    = str(fld(f, 'traffic_rule')).strip()
+
+        # Rule 1: Typo checks for base classifications
+        if not is_empty(lane_type) and lane_type not in valid_lane_types:
+            issues.append({'point': pt, 'fid': fid, 'issue': f"Typo/Invalid lane_type: '{lane_type}'. Expected one of: {valid_lane_types}"})
+        if not is_empty(line_type) and line_type not in valid_line_types:
+            issues.append({'point': pt, 'fid': fid, 'issue': f"Typo/Invalid line_type: '{line_type}'. Expected one of: {valid_line_types}"})
+        if not is_empty(area_type) and area_type not in valid_area_types:
+            issues.append({'point': pt, 'fid': fid, 'issue': f"Typo/Invalid area_type: '{area_type}'. Expected one of: {valid_area_types}"})
+
+        # Rule 2: line_type, line_sub and lane_type must be filled
+        if is_empty(line_type) or is_empty(line_sub) or is_empty(lane_type):
+            issues.append({'point': pt, 'fid': fid, 'issue': 'Missing basic attributes: line_type, line_sub, or lane_type'})
+
+        # Rule 3: centerline, cycle, road, road_cycle must have filled road_id and way_id values
+        if lane_type in ['centerline', 'cycle', 'road', 'road_cycle']:
+            # except area roads
+            is_road_with_area = (lane_type == 'road' and not is_empty(area_type))
+            if not is_road_with_area:
+                if is_empty(road_id) or is_empty(way_id):
+                    issues.append({'point': pt, 'fid': fid, 'issue': f'{lane_type.upper()} requires road_id and way_id'})
+
+        # Rule 4: centerline must have speed_limit, lane_morphology (one_way is optional but checked for typos if filled)
+        if lane_type == 'centerline':
+            if is_empty(speed_limit):
+                issues.append({'point': pt, 'fid': fid, 'issue': 'Centerline missing speed_limit'})
+            
+            if is_empty(lane_morph):
+                issues.append({'point': pt, 'fid': fid, 'issue': 'Centerline missing lane_morphology'})
+            elif lane_morph not in valid_morphs:
+                issues.append({'point': pt, 'fid': fid, 'issue': f"Typo/Invalid lane_morphology: '{lane_morph}'. Expected one of: {valid_morphs}"})
+                
+            # one_way NULL bırakılabilir, ama eğer doluysa sadece 'yes' veya 'no' olmalıdır
+            if not is_empty(one_way) and one_way not in valid_oneway:
+                issues.append({'point': pt, 'fid': fid, 'issue': f"Typo/Invalid one_way tag: '{one_way}'. Must be 'yes' or 'no'"})
+
+        # Rule 5: area_type 'exit', 'parking', 'mai_bus_stop' -> NULL road_id
+        if area_type in ['exit', 'parking', 'mai_bus_stop']:
+            if not is_empty(road_id):
+                issues.append({'point': pt, 'fid': fid, 'issue': f"road_id MUST be NULL for area_type '{area_type}'"})
+
+        # Rule 6: closest_lane must be filled for area_types 'exit', 'mai_bus_stop' 
+        if area_type in ['exit', 'mai_bus_stop']:
+            if is_empty(closest_lane):
+                issues.append({'point': pt, 'fid': fid, 'issue': f"closest_lane is required for area_type '{area_type}'"})
+
+        # Rule 7: name must be filled for area_type 'mai_bus_stop' 
+        if area_type == 'mai_bus_stop':
+            if is_empty(name):
+                issues.append({'point': pt, 'fid': fid, 'issue': f"name is required for area_type '{area_type}'"})
+
+        # Rule 8: if the area_type is filled then area_id must be filled
+        if area_type in ['mai_bus_stop', 'exit', 'parking']:
+            if is_empty(area_id):
+                issues.append({'point': pt, 'fid': fid, 'issue': "area_id is required when area_type is filled"})
+
+        # Rule 9: regulatory_elements must have unique re_ids and be linked to a centerline
+        if lane_type == 'regulatory_element':
+            if is_empty(re_id):
+                issues.append({'point': pt, 'fid': fid, 'issue': 're_id is required for regulatory_element'})
+            else:
+                if re_id_counts[re_id] > 1:
+                    issues.append({'point': pt, 'fid': fid, 'issue': f"Duplicate re_id: '{re_id}' is not unique"})
+                
+                # Orphan Check: Ignore if line_sub contains 'de294' or 'de231'
+                if re_id not in referenced_re_ids:
+                    if 'de294' not in line_sub.lower() and 'de231' not in line_sub.lower():
+                        issues.append({'point': pt, 'fid': fid, 'issue': f"Orphan Regulatory Element: re_id '{re_id}' is not linked to any traffic_rule"})
+
+        # Rule 10: traffic_rule must point to a valid re_id
+        if lane_type == 'centerline' and not is_empty(traffic_rule):
+            for t in traffic_rule.split(","):
+                t_clean = t.strip()
+                if t_clean and t_clean not in all_re_ids:
+                    issues.append({'point': pt, 'fid': fid, 'issue': f"Invalid traffic_rule: '{t_clean}' does not match any existing re_id"})
+
+    return issues
+
+    return issues
+
+def render_attribute_issues(issues, source_layer):
+    remove_layer_by_name(ATTRIBUTE_ISSUES_LAYER_NAME)
+    
+    if not issues:
+        log("Attributes: All required fields are properly filled.", Qgis.Success)
+        return
+
+    temp = QgsVectorLayer(f"Point?crs={source_layer.crs().authid()}", ATTRIBUTE_ISSUES_LAYER_NAME, "memory")
+    pr = temp.dataProvider()
+    pr.addAttributes([
+        QgsField("orig_fid", QVariant.Int),
+        QgsField("issue_type", QVariant.String)
+    ])
+    temp.updateFields()
+
+    new_feats = []
+    for iss in issues:
+        nf = QgsFeature(temp.fields())
+        nf.setGeometry(QgsGeometry.fromPointXY(iss['point']))
+        nf['orig_fid'] = iss['fid']
+        nf['issue_type'] = iss['issue']
+        new_feats.append(nf)
+
+    pr.addFeatures(new_feats)
+    temp.updateExtents()
+
+    symbol = QgsMarkerSymbol.createSimple({
+        'name': 'triangle', 'color': '#FFA500', 'outline_color': 'black', 'size': '4.0'
+    })
+    temp.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+    lbl = QgsPalLayerSettings()
+    lbl.fieldName = "issue_type"
+    lbl.enabled = True
+    lbl.placement = QgsPalLayerSettings.Placement.OverPoint
+    lbl.yOffset = -5
+    
+    tf = QgsTextFormat()
+    tf.setSize(8)
+    fnt = QFont("Arial"); fnt.setBold(True); tf.setFont(fnt)
+    buf = QgsTextBufferSettings()
+    buf.setEnabled(True); buf.setSize(1.0); tf.setBuffer(buf)
+    lbl.setFormat(tf)
+
+    temp.setLabeling(QgsVectorLayerSimpleLabeling(lbl))
+    temp.setLabelsEnabled(True)
+
+    add_layer_to_group(temp, visible=True)
+    log(f"{len(new_feats)} Attribute missing/invalid.", Qgis.Warning)
+
 def render_road_id_issues(issues, source_layer):
     remove_layer_by_name(ROAD_ID_ISSUES_LAYER_NAME)
     if not issues:
@@ -1289,9 +1484,14 @@ def run_qc(layer=None):
                  "One-way / Bidirectional Way", "Stop Zones",
                  ARROW_LAYER_NAME, YIELD_TO_LAYER_NAME,
                  REG_ALL_LAYER_NAME, REG_SEL_LAYER_NAME,
-                 INTEGRITY_LAYER_NAME, ROAD_ID_ISSUES_LAYER_NAME]:
+                 INTEGRITY_LAYER_NAME, ROAD_ID_ISSUES_LAYER_NAME,
+                 ATTRIBUTE_ISSUES_LAYER_NAME]:
         remove_layer_by_name(name)
 
+    attr_issues = check_attribute_completeness(layer)
+    render_attribute_issues(attr_issues, layer)
+    
+    
     render_integrity_issues(check_lane_integrity(), layer)
     render_road_id_issues(check_road_id_way_integrity(layer), layer)
     create_oneway_layer(layer)
