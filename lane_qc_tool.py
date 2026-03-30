@@ -886,15 +886,15 @@ def check_attribute_completeness(layer):
 
         # Rule 1: Typo checks for base classifications
         if not is_empty(lane_type) and lane_type not in valid_lane_types:
-            issues.append({'point': pt, 'fid': fid, 'issue': f"typo/invalid lane_type: '{lane_type}'. Expected one of: {valid_lane_types}"})
+            issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"typo/invalid lane_type: '{lane_type}'. Expected one of: {valid_lane_types}"})
         if not is_empty(line_type) and line_type not in valid_line_types:
-            issues.append({'point': pt, 'fid': fid, 'issue': f"typo/invalid line_type: '{line_type}'. Expected one of: {valid_line_types}"})
+            issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"typo/invalid line_type: '{line_type}'. Expected one of: {valid_line_types}"})
         if not is_empty(area_type) and area_type not in valid_area_types:
-            issues.append({'point': pt, 'fid': fid, 'issue': f"typo/invalid area_type: '{area_type}'. Expected one of: {valid_area_types}"})
+            issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"typo/invalid area_type: '{area_type}'. Expected one of: {valid_area_types}"})
 
         # Rule 2: line_type, line_sub and lane_type must be filled
         if is_empty(line_type) or is_empty(line_sub) or is_empty(lane_type):
-            issues.append({'point': pt, 'fid': fid, 'issue': 'missing basic attributes: line_type, line_sub, or lane_type'})
+            issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': 'missing basic attributes: line_type, line_sub, or lane_type'})
 
         # Rule 3: centerline, cycle, road, road_cycle must have filled road_id and way_id values
         if lane_type in ['centerline', 'cycle', 'road', 'road_cycle']:
@@ -902,54 +902,54 @@ def check_attribute_completeness(layer):
             is_road_with_area = (lane_type == 'road' and not is_empty(area_type))
             if not is_road_with_area:
                 if is_empty(road_id) or is_empty(way_id):
-                    issues.append({'point': pt, 'fid': fid, 'issue': f'{lane_type} requires road_id and way_id'})
+                    issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f'{lane_type} requires road_id and way_id'})
 
         # Rule 4: centerline must have speed_limit, lane_morphology (one_way is optional but checked for typos if filled)
         if lane_type == 'centerline':
             if is_empty(speed_limit):
-                issues.append({'point': pt, 'fid': fid, 'issue': 'centerline missing speed_limit'})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': 'centerline missing speed_limit'})
             
             if is_empty(lane_morph):
-                issues.append({'point': pt, 'fid': fid, 'issue': 'centerline missing lane_morphology'})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': 'centerline missing lane_morphology'})
             elif lane_morph not in valid_morphs:
-                issues.append({'point': pt, 'fid': fid, 'issue': f"typo/invalid lane_morphology: '{lane_morph}'. Expected one of: {valid_morphs}"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"typo/invalid lane_morphology: '{lane_morph}'. Expected one of: {valid_morphs}"})
                 
             # one_way NULL bırakılabilir, ama eğer doluysa sadece 'yes' veya 'no' olmalıdır
             if not is_empty(one_way) and one_way not in valid_oneway:
-                issues.append({'point': pt, 'fid': fid, 'issue': f"typo/invalid one_way tag: '{one_way}'. Must be 'yes' or 'no'"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"typo/invalid one_way tag: '{one_way}'. Must be 'yes' or 'no'"})
 
         # Rule 5: area_type 'exit', 'parking', 'mai_bus_stop' -> NULL road_id
         if area_type in ['exit', 'parking', 'mai_bus_stop']:
             if not is_empty(road_id):
-                issues.append({'point': pt, 'fid': fid, 'issue': f"road_id must be NULL for area_type '{area_type}'"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"road_id must be NULL for area_type '{area_type}'"})
 
         # Rule 6: closest_lane must be filled for area_types 'exit', 'mai_bus_stop' 
         if area_type in ['exit', 'mai_bus_stop']:
             if is_empty(closest_lane):
-                issues.append({'point': pt, 'fid': fid, 'issue': f"closest_lane is required for area_type '{area_type}'"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"closest_lane is required for area_type '{area_type}'"})
 
         # Rule 7: name must be filled for area_type 'mai_bus_stop' 
         if area_type == 'mai_bus_stop':
             if is_empty(name):
-                issues.append({'point': pt, 'fid': fid, 'issue': f"name is required for area_type '{area_type}'"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"name is required for area_type '{area_type}'"})
 
         # Rule 8: if the area_type is filled then area_id must be filled
         if area_type in ['mai_bus_stop', 'exit', 'parking']:
             if is_empty(area_id):
-                issues.append({'point': pt, 'fid': fid, 'issue': "area_id is required when area_type is filled"})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': "area_id is required when area_type is filled"})
 
         # Rule 9: regulatory_elements must have unique re_ids and be linked to a centerline
         if lane_type == 'regulatory_element':
             if is_empty(re_id):
-                issues.append({'point': pt, 'fid': fid, 'issue': 're_id is required for regulatory_element'})
+                issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': 're_id is required for regulatory_element'})
             else:
                 if re_id_counts[re_id] > 1:
-                    issues.append({'point': pt, 'fid': fid, 'issue': f"duplicate re_id: {re_id} is not unique"})
+                    issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"duplicate re_id: {re_id} is not unique"})
                 
-                # Orphan Check: Ignore if line_sub contains 'de294' or 'de231'
+                # Orphan Check: Ignore if line_sub contains 'de294' or 'de341'
                 if re_id not in referenced_re_ids:
-                    if 'de294' not in line_sub.lower() and 'de231' not in line_sub.lower():
-                        issues.append({'point': pt, 'fid': fid, 'issue': f"orphan regulatory element: {re_id} is not linked to any centerline"})
+                    if 'de294' not in line_sub.lower() and 'de341' not in line_sub.lower():
+                        issues.append({'point': pt, 'fid': fid, 'lane_type': lane_type, 'road_id': road_id, 're_id': re_id, 'issue': f"orphan regulatory element: {re_id} is not linked to any centerline"})
 
         # Rule 10: traffic_rule must point to a valid re_id
         '''
@@ -973,7 +973,7 @@ def render_attribute_issues(issues, source_layer):
     temp = QgsVectorLayer(f"Point?crs={source_layer.crs().authid()}", ATTRIBUTE_ISSUES_LAYER_NAME, "memory")
     pr = temp.dataProvider()
     pr.addAttributes([
-        QgsField("orig_fid", QVariant.Int),
+        QgsField("id", QVariant.String),
         QgsField("issue_type", QVariant.String)
     ])
     temp.updateFields()
@@ -982,7 +982,10 @@ def render_attribute_issues(issues, source_layer):
     for iss in issues:
         nf = QgsFeature(temp.fields())
         nf.setGeometry(QgsGeometry.fromPointXY(iss['point']))
-        nf['orig_fid'] = iss['fid']
+        if iss.get('lane_type', '').strip().lower() == 'regulatory_element':
+            nf['id'] = f"re_id: {iss.get('re_id', '')}"
+        else:
+            nf['id'] = f"road_id: {iss.get('road_id', '')}"
         nf['issue_type'] = iss['issue']
         new_feats.append(nf)
 
