@@ -378,67 +378,6 @@ def check_lane_integrity(snap_tol=1e-15, graph_tol=1e-5):
                         "way_id": b_wid, "road_id": cl_rid, "point": pt,
                         "type": f"BORDER_MISMATCH → road_id {sorted(str(r) for r in found_rids)} (expected: {sorted(str(r) for r in expected)})"
                     })
-
-    if stop_wait_lines:
-        lane_index, lane_by_id = QgsSpatialIndex(), {}
-        for bf in all_lines:
-            lane_index.insertFeature(bf)
-            lane_by_id[bf.id()] = bf
-
-        endpoint_r = 0.00005
-
-        for f in stop_wait_lines:
-            sl_geom = f.geometry()
-            if not sl_geom: continue
-            sl_line = get_polyline(f)
-            if not sl_line: continue
-            wid, rid = fld(f, 'way_id'), fld(f, 'road_id')
-
-            bbox = sl_geom.boundingBox()
-            bbox.grow(endpoint_r * 3)
-            nearby_ids_list = lane_index.intersects(bbox)
-
-            for lid in nearby_ids_list:
-                if lid not in lane_by_id: continue
-                lane_f    = lane_by_id[lid]
-                lane_geom = lane_f.geometry()
-                if not lane_geom: continue
-                if not sl_geom.crosses(lane_geom) and not sl_geom.intersects(lane_geom):
-                    continue
-                intersection = sl_geom.intersection(lane_geom)
-                if not intersection or intersection.isEmpty(): continue
-                wkb = intersection.wkbType()
-                if wkb in (1, 0x80000001):
-                    int_pts = [intersection.asPoint()]
-                elif wkb in (4, 0x80000004):
-                    int_pts = intersection.asMultiPoint()
-                else:
-                    continue
-                l_line = get_polyline(lane_f)
-                if not l_line: continue
-                endpoints = [l_line[0], l_line[-1]]
-                for int_pt in int_pts:
-                    int_geom = QgsGeometry.fromPointXY(int_pt)
-                    if not any(int_geom.distance(QgsGeometry.fromPointXY(ep)) == 0
-                               for ep in endpoints):
-                        issues.append({"way_id": fld(lane_f, 'way_id'),
-                                       "road_id": fld(lane_f, 'road_id'),
-                                       "point": int_pt, "type": "STOP_LINE_GAP"})
-
-            for pt in (sl_line[0], sl_line[-1]):
-                pt_geom = QgsGeometry.fromPointXY(pt)
-                r = QgsRectangle(pt.x()-endpoint_r, pt.y()-endpoint_r,
-                                 pt.x()+endpoint_r, pt.y()+endpoint_r)
-                snapped = close_miss = False
-                for bid in lane_index.intersects(r):
-                    if bid not in lane_by_id: continue
-                    d = pt_geom.distance(lane_by_id[bid].geometry())
-                    if d == 0:           snapped = True; break
-                    elif d < endpoint_r: close_miss = True
-                if not snapped and close_miss:
-                    issues.append({"way_id": wid, "road_id": rid,
-                                   "point": pt, "type": "STOP_LINE_GAP"})
-
     return issues
 
 def render_integrity_issues(issues, source_layer):
@@ -811,7 +750,7 @@ def check_road_id_way_integrity(layer):
                                         best_partner = min(possible_partners, key=lambda x: abs(x - ref_wid))
                                         issues.append({
                                             'feat': f, 'road_id': my_rid, 'way_id': my_wid,
-                                            'issue_type': f'Lanelet relation could not be created (Invalid yield_to: {ref_rid}_{ref_wid} forms a cycle lane with way_id {best_partner}. Must use min way_id: {best_partner})'
+                                            'issue_type': f'Invalid yield_to, {ref_rid}_{ref_wid} forms a cycle lane with way_id {best_partner}. Yield_to tag must use min way_id: {best_partner}'
                                         })
                         except ValueError:
                             pass
