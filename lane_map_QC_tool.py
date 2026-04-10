@@ -241,7 +241,7 @@ class QcSuitePlugin:
         
         self.toolbar.addSeparator()
         
-        act_routing = QAction("U0001F697 Lane Routing Simulation", self.iface.mainWindow())
+        act_routing = QAction("\U0001F697 Lane Routing Simulation", self.iface.mainWindow())
         act_routing.setToolTip("Select start and end points to simulate routing on centerlines")
         act_routing.triggered.connect(self.run_lane_routing)
         self.toolbar.addAction(act_routing)
