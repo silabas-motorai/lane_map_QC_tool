@@ -230,8 +230,11 @@ def render_all_routes(all_paths, feat_by_id, flow_cache, source_layer):
         lyr.setRenderer(QgsSingleSymbolRenderer(symbol))
         QgsProject.instance().addMapLayer(lyr)
 
-def run_routing():
-    lyr = iface.activeLayer()
-    if not lyr: return
-    tool = RoutingMapTool(iface.mapCanvas(), lyr)
+def run_routing(layer=None):
+    if layer is None:
+        layer = iface.activeLayer()
+    if not layer or not isinstance(layer, QgsVectorLayer):
+        iface.messageBar().pushMessage("Routing", "No active vector layer found.", level=Qgis.Critical)
+        return
+    tool = RoutingMapTool(iface.mapCanvas(), layer)
     iface.mapCanvas().setMapTool(tool)
