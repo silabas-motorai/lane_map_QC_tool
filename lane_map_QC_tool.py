@@ -4,6 +4,7 @@
 # =============================================================================
 
 import os
+from qgis.core import Qgis, QgsVectorLayer
 from qgis.PyQt.QtCore import Qt, QUrl
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
