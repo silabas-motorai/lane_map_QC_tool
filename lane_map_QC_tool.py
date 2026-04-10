@@ -237,6 +237,13 @@ class QcSuitePlugin:
         act_paths.triggered.connect(self._reconfigure_paths)
         self.toolbar.addAction(act_paths)
         self.actions.append(act_paths)
+        
+        self.toolbar.addSeparator()
+        act_routing = QAction(":car: Lane Routing Simulation", self.iface.mainWindow())
+        act_routing.setToolTip("Select start and end points to simulate routing on centerlines")
+        act_routing.triggered.connect(self.run_lane_routing)
+        self.toolbar.addAction(act_routing)
+        self.actions.append(act_routing)
 
         self._build_docks()
 
@@ -283,6 +290,23 @@ class QcSuitePlugin:
             return
         lane_qc_tool.run_qc(layer)
 
+    # ── Lane Routing ──────────────────────────────────────────────────────────
+
+    def run_lane_routing(self):
+        try:
+            from . import routing_tool 
+            layer = self.iface.activeLayer()
+            if not layer or not isinstance(layer, QgsVectorLayer):
+                self.iface.messageBar().pushMessage(
+                    "Routing", "Please select a vector layer first.", level=1, duration=4
+                )
+                return
+            routing_tool.run_routing(layer)
+
+        except ImportError:
+            self.iface.messageBar().pushMessage(
+                "Error", "routing_tool.py file not found in plugin folder!", level=2
+            )
     # ── Dashcam / Street View toggle ─────────────────────────────────────────
 
     def _reconfigure_paths(self):
