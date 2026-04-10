@@ -232,18 +232,19 @@ class QcSuitePlugin:
         self.actions.append(act_cam)
         self._act_cam = act_cam
 
-        act_paths = QAction("📂  Set Dashcam Paths", self.iface.mainWindow())
+        act_paths = QAction("📂 Set Dashcam Paths", self.iface.mainWindow())
         act_paths.setToolTip("Change the HTML overview map and frames root folder")
         act_paths.triggered.connect(self._reconfigure_paths)
         self.toolbar.addAction(act_paths)
         self.actions.append(act_paths)
         
         self.toolbar.addSeparator()
-        act_routing = QAction(":car: Lane Routing Simulation", self.iface.mainWindow())
-        act_routing.setToolTip("Select start and end points to simulate routing on centerlines")
-        act_routing.triggered.connect(self.run_lane_routing)
-        self.toolbar.addAction(act_routing)
-        self.actions.append(act_routing)
+        
+        act_routing = QAction("🚗 Lane Routing Simulation", self.iface.mainWindow())
+        act_routing.setToolTip("Select start and end points to simulate routing on centerlines")
+        act_routing.triggered.connect(self.run_lane_routing)
+        self.toolbar.addAction(act_routing)
+        self.actions.append(act_routing)
 
         self._build_docks()
 
@@ -292,21 +293,33 @@ class QcSuitePlugin:
 
     # ── Lane Routing ──────────────────────────────────────────────────────────
 
-    def run_lane_routing(self):
-        try:
-            from . import routing_tool 
-            layer = self.iface.activeLayer()
-            if not layer or not isinstance(layer, QgsVectorLayer):
-                self.iface.messageBar().pushMessage(
-                    "Routing", "Please select a vector layer first.", level=1, duration=4
-                )
-                return
-            routing_tool.run_routing(layer)
+    def run_lane_routing(self):
+        try:
+            # Import inside function to avoid startup issues
+            from . import routing_tool
+            
+            layer = self.iface.activeLayer()
+            if not layer or not isinstance(layer, QgsVectorLayer):
+                self.iface.messageBar().pushMessage(
+                    "Routing", "Please select a vector layer first.", 
+                    level=Qgis.Warning, duration=4
+                )
+                return
 
-        except ImportError:
-            self.iface.messageBar().pushMessage(
-                "Error", "routing_tool.py file not found in plugin folder!", level=2
-            )
+            # Trigger the tool. 
+            # Note: Ensure run_routing in routing_tool.py accepts the layer argument.
+            routing_tool.run_routing(layer)
+
+        except ImportError:
+            self.iface.messageBar().pushMessage(
+                "Error", "routing_tool.py file not found in plugin folder!", 
+                level=Qgis.Critical, duration=5
+            )
+        except Exception as e:
+            self.iface.messageBar().pushMessage(
+                "Error", f"An unexpected error occurred: {str(e)}", 
+                level=Qgis.Critical, duration=5
+            )
     # ── Dashcam / Street View toggle ─────────────────────────────────────────
 
     def _reconfigure_paths(self):
