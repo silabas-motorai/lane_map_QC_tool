@@ -2,7 +2,7 @@
 #  QC SUITE  —  lane_map_QC_tool.py
 #  Toolbar + StreetViewDock + UnifiedMapTool
 # =============================================================================
-
+# -*- coding: utf-8 -*-
 import os
 from qgis.core import Qgis, QgsVectorLayer
 from qgis.PyQt.QtCore import Qt, QUrl
