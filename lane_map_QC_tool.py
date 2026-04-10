@@ -217,7 +217,7 @@ class QcSuitePlugin:
         self.toolbar = self.iface.addToolBar("QC Suite")
         self.toolbar.setObjectName("QcSuiteToolbar")
 
-        act_qc = QAction("🗺  Lane Map Quality Check", self.iface.mainWindow())
+        act_qc = QAction("\U0001F5FA  Lane Map Quality Check", self.iface.mainWindow())
         act_qc.setToolTip("Run integrity check + build analysis layers on active layer")
         act_qc.triggered.connect(self.run_lane_qc)
         self.toolbar.addAction(act_qc)
@@ -225,7 +225,7 @@ class QcSuitePlugin:
 
         self.toolbar.addSeparator()
 
-        act_cam = QAction("🎥  Dashcam / Street View", self.iface.mainWindow())
+        act_cam = QAction("\U0001F3A5  Dashcam / Street View", self.iface.mainWindow())
         act_cam.setToolTip("Click on the map to show dashcam frame + street-level imagery")
         act_cam.setCheckable(True)
         act_cam.toggled.connect(self._on_cam_toggled)
@@ -233,7 +233,7 @@ class QcSuitePlugin:
         self.actions.append(act_cam)
         self._act_cam = act_cam
 
-        act_paths = QAction("📂 Set Dashcam Paths", self.iface.mainWindow())
+        act_paths = QAction("\U0001F4C2 Set Dashcam Paths", self.iface.mainWindow())
         act_paths.setToolTip("Change the HTML overview map and frames root folder")
         act_paths.triggered.connect(self._reconfigure_paths)
         self.toolbar.addAction(act_paths)
@@ -241,7 +241,7 @@ class QcSuitePlugin:
         
         self.toolbar.addSeparator()
         
-        act_routing = QAction("🚗 Lane Routing Simulation", self.iface.mainWindow())
+        act_routing = QAction("U0001F697 Lane Routing Simulation", self.iface.mainWindow())
         act_routing.setToolTip("Select start and end points to simulate routing on centerlines")
         act_routing.triggered.connect(self.run_lane_routing)
         self.toolbar.addAction(act_routing)

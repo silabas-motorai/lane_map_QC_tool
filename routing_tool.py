@@ -94,7 +94,6 @@ class RoutingMapTool(QgsMapTool):
         self._markers = [] 
         self._start_fid = None
         self.feat_by_id, self.flow_cache, self.spatial_idx, self.adj, self.road_id_cache = build_graph(layer)
-        _log("Graph built with STRICT connectivity. Select start point.", Qgis.Success)
 
     def _snap(self, map_point):
         candidates = self.spatial_idx.nearestNeighbor(map_point, 5)
