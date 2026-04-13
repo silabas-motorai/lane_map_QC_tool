@@ -2,6 +2,8 @@
 
 QGIS plugin for comprehensive HD lane map quality control. Combines visual QC layers, topological connectivity checks (snapping & border match), logical lane scenario validation, attribute completeness check, along with dashcam frame viewer and street-level imagery (Google Street View / Mapillary).
 
+The plugin also provides a routing tool to check lane routing between the selected start and end points on the map via lane routing simulation. 
+
 <img width="1911" height="873" alt="Screenshot from 2026-03-16 16-08-22" src="https://github.com/user-attachments/assets/2649eb40-bb5e-469a-82b5-494009cefbf5" />
 
 ---
@@ -87,6 +89,19 @@ dashcam/
 ```
 
 ---
+### Lane Routing Simulation
+
+Click ** Lane Routing Simulation** to activate the tool. 
+- Start Node: Click on the map to set (Green point).
+- End Node: Click again to set (Red point).
+
+The calculated routes will appear as overlay layers in unique colors.
+Right-click on the mouse will delete the selected nodes and the generated routes.
+
+Calculated routes will appear as unique color overlays. Right-click to clear all nodes and routes.
+
+<img width="1266" height="616" alt="image" src="https://github.com/user-attachments/assets/31b62b2e-8f61-4f32-aebb-511084d9d7b5" />
+
 
 ## Updating the Plugin
 
