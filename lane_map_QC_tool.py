@@ -232,7 +232,7 @@ class QcSuitePlugin:
 
         self.toolbar.addSeparator()
 
-        act_cam = QAction("🎥  Dashcam / Street View, self.iface.mainWindow())
+        act_cam = QAction("🎥  Dashcam / Street View", self.iface.mainWindow())
         act_cam.setToolTip("Click on the map to show dashcam frame + street-level imagery")
         act_cam.setCheckable(True)
         act_cam.toggled.connect(self._on_cam_toggled)
