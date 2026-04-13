@@ -92,10 +92,10 @@ dashcam/
 ### Lane Routing Simulation
 
 Click **🚗 Lane Routing Simulation** to activate the tool. 
-- Start Node: Click on the map to set start point(green point)
+- Start Node: Click on the map to set start point (green point)
 - End Node: Click again to set end point (red point)
 
-Calculated routes will appear as unique color overlays. Right-click to clear all nodes and routes.
+Calculated routes will appear as colored line overlays. Right-click to clear all nodes and routes.
 
 <img width="1266" height="616" alt="image" src="https://github.com/user-attachments/assets/31b62b2e-8f61-4f32-aebb-511084d9d7b5" />
 
