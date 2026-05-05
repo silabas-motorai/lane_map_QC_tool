@@ -56,7 +56,7 @@ def _route_color(i): return _PALETTE[i % len(_PALETTE)]
 # =============================================================================
 # REGEX
 # =============================================================================
-IMG_RE        = re.compile(r"frame_(\d+)\.(jpg|jpeg|png)$", re.IGNORECASE)
+IMG_RE        = re.compile(r".*_(\d+)m\.(jpg|jpeg|png)$", re.IGNORECASE)
 FOLDER_A      = re.compile(r"^(\d{8}_\d{6})_")
 FOLDER_B      = re.compile(r"^frames-(\d{8})T(\d{6})Z-")
 MARKER_DEF_RE = re.compile(
@@ -67,9 +67,8 @@ POLY_DEF_RE   = re.compile(
     re.DOTALL)
 PAIR_RE       = re.compile(r"\[\s*([0-9.\-]+)\s*,\s*([0-9.\-]+)\s*\]")
 TOOLTIP_RE    = re.compile(
-    r"([A-Za-z0-9_]+)\.bindTooltip\(\s*`[^`]*<b>([^<]+)</b>",
+    r"([A-Za-z0-9_]+)\.bindTooltip\(\s*`[^`]*<div>\s*([A-Za-z0-9_-]+)\s*</div>",
     re.MULTILINE)
-
 # =============================================================================
 # CRS UNIT HELPER
 # =============================================================================
